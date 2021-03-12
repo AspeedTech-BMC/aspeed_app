@@ -22,6 +22,8 @@
 #ifndef SVF_H
 #define SVF_H
 
+#include <stdint.h>
+
 /*-----</Macros>-------------------------------------------------*/
 
 /**
@@ -98,4 +100,6 @@ struct scan_field {
 	/** The mask to go with check_value */
 	uint8_t *check_mask;
 };
+
+int handle_svf_command(char *filename);
 #endif /* SVF_H */

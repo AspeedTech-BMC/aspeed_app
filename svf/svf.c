@@ -1343,7 +1343,7 @@ XXR_common:
 
 				/* enter into run_state if necessary */
 				if (svf_tap_state_is_stable(svf_para.runtest_run_state))
-					ast_jtag_run_test_idle(0, 0, 0);
+					ast_jtag_run_test_idle(0, 0, run_count);
 				else {
 						LOG_ERROR("Aspeed software can't support runtest to %s:%d yet",
 								tap_state_name(svf_para.runtest_run_state),
@@ -1359,7 +1359,7 @@ XXR_common:
 				/* move to end_state if necessary */
 				if (svf_para.runtest_end_state != svf_para.runtest_run_state) {
 					if (svf_tap_state_is_stable(svf_para.runtest_end_state))
-						ast_jtag_run_test_idle(0, 0, 0);
+						ast_jtag_run_test_idle(0, 0, run_count);
 					else {
 						LOG_ERROR("Aspeed software can't support runtest to %s:%d yet",
 								tap_state_name(svf_para.runtest_end_state),

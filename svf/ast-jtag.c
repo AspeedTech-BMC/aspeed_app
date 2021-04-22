@@ -69,8 +69,7 @@ int ast_set_jtag_freq(unsigned int freq)
 	return 0;
 }
 
-int ast_jtag_run_test_idle(unsigned char reset, unsigned char end, unsigned char tck)
-
+int ast_jtag_run_test_idle(unsigned char reset, unsigned char end, unsigned int tck)
 {
 	int retval;
 	struct runtest_idle run_idle;

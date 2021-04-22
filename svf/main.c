@@ -2,12 +2,6 @@
 /*
  * Copyright 2020 Aspeed Technology Inc.
  */
-
-
-/*
-Please get the JEDEC file format before you read the code
-*/
-
 #include <stdio.h>
 #include <sys/ioctl.h>
 #include <sys/types.h>
@@ -21,6 +15,7 @@ Please get the JEDEC file format before you read the code
 
 #include <sys/mman.h>
 #include "ast-jtag.h"
+#include "svf.h"
 
 #define ERROR_OK                        (0)
 #define ERROR_NO_CONFIG_FILE            (-2)
@@ -73,15 +68,13 @@ static const struct option
 /*************************************************************************************/
 int main(int argc, char *argv[])
 {
-	int i, ret;
+	int  ret;
 	char option;
 	char svf_name[100] = "";
 	char dev_name[100] = "";
 	int svf = 0;
 	unsigned int freq = 0;
 	unsigned int jtag_freq = 0;
-
-	unsigned int dev_id;
 
 	while ((option = getopt_long(argc, argv, short_options, long_options, NULL)) != (char) -1) {
 		switch (option) {

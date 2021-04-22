@@ -11,7 +11,7 @@ struct runtest_idle {
 	xfer_mode 	mode;		//0 :HW mode, 1: SW mode
 	unsigned char 	reset;	//Test Logic Reset
 	unsigned char 	end;	//o: idle, 1: ir pause, 2: drpause
-	unsigned char 	tck;	//keep tck
+	unsigned int 	tck;	//The number of tck
 };
 
 struct sir_xfer {
@@ -43,6 +43,6 @@ extern int ast_jtag_open(char *dev);
 extern void ast_jtag_close(void);
 extern unsigned int ast_get_jtag_freq(void);
 extern int ast_set_jtag_freq(unsigned int freq);
-extern int ast_jtag_run_test_idle(unsigned char reset, unsigned char end, unsigned char tck);
+extern int ast_jtag_run_test_idle(unsigned char reset, unsigned char end, unsigned int tck);
 extern int ast_jtag_sir_xfer(unsigned char endir, unsigned int len, unsigned int *out, unsigned int *in);
 extern int ast_jtag_sdr_xfer(unsigned char enddr, unsigned int len, unsigned int *out, unsigned int *in);

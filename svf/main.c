@@ -2,12 +2,6 @@
 /*
  * Copyright 2020 Aspeed Technology Inc.
  */
-
-
-/*
-Please get the JEDEC file format before you read the code
-*/
-
 #include <stdio.h>
 #include <sys/ioctl.h>
 #include <sys/types.h>

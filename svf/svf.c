@@ -57,6 +57,25 @@ static int step;
 static unsigned int frequency;
 static int jtag_dev;
 
+unsigned char tap_mapping[] = {
+    [TAP_DREXIT2] = JTAG_UNSUPPORT,
+    [TAP_DREXIT1] = JTAG_UNSUPPORT,
+    [TAP_DRSHIFT] = JTAG_SHIFTDR,
+    [TAP_DRPAUSE] = JTAG_PAUSEDR,
+    [TAP_IRSELECT] = JTAG_UNSUPPORT,
+    [TAP_DRUPDATE] = JTAG_UNSUPPORT,
+    [TAP_DRCAPTURE] = JTAG_UNSUPPORT,
+    [TAP_DRSELECT] = JTAG_UNSUPPORT,
+    [TAP_IREXIT2] = JTAG_UNSUPPORT,
+    [TAP_IREXIT1] = JTAG_UNSUPPORT,
+    [TAP_IRSHIFT] = JTAG_SHIFTIR,
+    [TAP_IRPAUSE] = JTAG_PAUSEIR,
+    [TAP_IDLE] = JTAG_IDLE,
+    [TAP_IRUPDATE] = JTAG_UNSUPPORT,
+    [TAP_IRCAPTURE] = JTAG_UNSUPPORT,
+    [TAP_RESET] = JTAG_TLRESET
+};
+
 void DBG_log(int level, const char *format, ...)
 {
 	if (level < loglevel)
@@ -1150,14 +1169,9 @@ XXR_common:
 					/* NOTE:  doesn't use SVF-specified state paths */
 					LOG_DEBUG("dr_scan: num_bits %d end_state %s\n",
 						field.num_bits, tap_state_name(svf_para.dr_end_state));
-					if (svf_para.dr_end_state == TAP_IDLE)
-						ast_jtag_sdr_xfer(0, field.num_bits,
-							field.out_value,
-							field.in_value);
-					else
-						ast_jtag_sdr_xfer(1, field.num_bits,
-							field.out_value,
-							field.in_value);
+					ast_jtag_xfer(tap_mapping[svf_para.dr_end_state], field.num_bits,
+						field.out_value,
+						field.in_value, JTAG_SDR_XFER);
 				}
 
 				svf_buffer_index += (i + 7) >> 3;
@@ -1246,14 +1260,9 @@ XXR_common:
 					/* NOTE:  doesn't use SVF-specified state paths */
 					LOG_DEBUG("ir_scan: num_bits %d end_state %s\n",
 						field.num_bits, tap_state_name(svf_para.ir_end_state));
-					if (svf_para.ir_end_state == TAP_IDLE)
-						ast_jtag_sir_xfer(0, field.num_bits,
-							field.out_value,
-							field.in_value);
-					else
-						ast_jtag_sir_xfer(1, field.num_bits,
-							field.out_value,
-							field.in_value);
+					ast_jtag_xfer(tap_mapping[svf_para.ir_end_state], field.num_bits,
+						field.out_value,
+						field.in_value, JTAG_SIR_XFER);
 				}
 
 				svf_buffer_index += (i + 7) >> 3;
@@ -1343,7 +1352,7 @@ XXR_common:
 
 				/* enter into run_state if necessary */
 				if (svf_tap_state_is_stable(svf_para.runtest_run_state))
-					ast_jtag_run_test_idle(0, 0, run_count);
+					ast_jtag_run_test_idle(tap_mapping[svf_para.runtest_run_state], run_count);
 				else {
 						LOG_ERROR("Aspeed software can't support runtest to %s:%d yet",
 								tap_state_name(svf_para.runtest_run_state),
@@ -1359,8 +1368,9 @@ XXR_common:
 				/* move to end_state if necessary */
 				if (svf_para.runtest_end_state != svf_para.runtest_run_state) {
 					if (svf_tap_state_is_stable(svf_para.runtest_end_state))
-						ast_jtag_run_test_idle(0, 0, run_count);
-					else {
+						ast_jtag_run_test_idle(tap_mapping[svf_para.runtest_end_state], run_count);
+					else
+					{
 						LOG_ERROR("Aspeed software can't support runtest to %s:%d yet",
 								tap_state_name(svf_para.runtest_end_state),
 								svf_para.runtest_end_state);
@@ -1401,7 +1411,7 @@ XXR_common:
 					/* execute last path if necessary */
 					if (svf_tap_state_is_stable(path[num_of_argu - 1])) {
 						/* last state MUST be stable state */
-						ast_jtag_run_test_idle(0, 0, 0);
+						ast_jtag_run_test_idle(tap_mapping[path[num_of_argu - 1]], 0);
 						LOG_DEBUG("\tmove to %s by path_move",
 								tap_state_name(path[num_of_argu - 1]));
 					} else {
@@ -1422,12 +1432,7 @@ XXR_common:
 					LOG_DEBUG("\tmove to %s",
 							tap_state_name(state));
 					/* FIXME handle statemove failures */
-					if (TAP_RESET == state)
-						ast_jtag_run_test_idle(1, 0, 0);
-					else if (TAP_IDLE == state)
-						ast_jtag_run_test_idle(0, 0, 0);
-					else
-						LOG_ERROR("%s:Not support STATE %s", argus[0], tap_state_name(state));
+					ast_jtag_run_test_idle(tap_mapping[state], 0);
 				} else {
 					LOG_ERROR("%s: %s is not a stable state",
 							argus[0], tap_state_name(state));

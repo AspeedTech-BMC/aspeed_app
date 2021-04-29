@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Copyright 2020 Aspeed Technology Inc.
  */
@@ -69,14 +68,13 @@ int ast_set_jtag_freq(unsigned int freq)
 	return 0;
 }
 
-int ast_jtag_run_test_idle(unsigned char reset, unsigned char end, unsigned int tck)
+int ast_jtag_run_test_idle(unsigned char end, unsigned int tck)
 {
 	int retval;
-	struct runtest_idle run_idle;
+	struct jtag_runtest_idle run_idle;
 
 	run_idle.mode = mode;
 	run_idle.end = end;
-	run_idle.reset = reset;
 	run_idle.tck = tck;
 
 	retval = ioctl(jtag_fd, ASPEED_JTAG_IOCRUNTEST, &run_idle);
@@ -91,72 +89,33 @@ int ast_jtag_run_test_idle(unsigned char reset, unsigned char end, unsigned int 
 	return 0;
 }
 
-int ast_jtag_sir_xfer(unsigned char endir, unsigned int len, unsigned int *out, unsigned int *in)
+int ast_jtag_xfer(unsigned char endsts, unsigned int len, unsigned int *out, unsigned int *in, enum jtag_xfer_type type)
 {
 	int 	retval;
-	struct sir_xfer	sir;
+	struct jtag_xfer xfer;
 
-	if (len > 32)
-		return -1;
-
-	sir.mode = mode;
-	sir.length = len;
-	sir.endir = endir;
-	sir.tdo = in;
-	sir.tdi = out;
+	xfer.mode = mode;
+	xfer.length = len;
+	xfer.end_sts = endsts;
+	xfer.tdo = in;
+	xfer.tdi = out;
+	xfer.type = type;
 #if DEBUG
 	int i, send_len;
-	send_len = sir.length >> 5;
-	if (sir.length & 0x1f)
+	send_len = xfer.length >> 5;
+	if (xfer.length & 0x1f)
 		send_len++;
 	for (i = 0; i < send_len; i++)
-		ast_jtag_printf("tdo:%08x tdi:%08x\n",sir.tdo[i], sir.tdi[i]);
+		ast_jtag_printf("tdo:%08x tdi:%08x\n",xfer.tdo[i], xfer.tdi[i]);
 #endif
-	retval = ioctl(jtag_fd, ASPEED_JTAG_IOCSIR, &sir);
+	retval = ioctl(jtag_fd, ASPEED_JTAG_IOCXFER, &xfer);
 	if (retval == -1) {
 		perror("ioctl JTAG sir fail!\n");
 		return -1;
 	}
 #if DEBUG
 	for (i = 0; i < send_len; i++)
-		ast_jtag_printf("tdo:%08x tdi:%08x\n",sir.tdo[i], sir.tdi[i]);
-#endif
-//	if(endir)
-//		usleep(3000);
-	// return *sir.tdo;
-	return 0;
-}
-
-int ast_jtag_sdr_xfer(unsigned char enddr, unsigned int len, unsigned int *out, unsigned int *in)
-{
-	//write
-	int retval;
-	struct sdr_xfer sdr;
-
-	sdr.mode = mode;
-
-	sdr.direct = 1;
-	sdr.enddr = enddr;
-	sdr.length = len;
-	sdr.tdio = out;
-#if DEBUG
-	int i, send_len;
-	send_len = sdr.length >> 5;
-	if (sdr.length & 0x1f)
-		send_len++;
-	for (i = 0; i < send_len; i++)
-		ast_jtag_printf("output:%08x\n",sdr.tdio[i]);
-#endif
-	retval = ioctl(jtag_fd, ASPEED_JTAG_IOCSDR, &sdr);
-	if (retval == -1) {
-		perror("ioctl JTAG data xfer fail!\n");
-		return -1;
-	}
-	memcpy(in, sdr.tdio, sdr.length);
-#if DEBUG
-	for (i = 0; i < send_len; i++)
-		ast_jtag_printf("input:%08x\n",in[i]);
+		ast_jtag_printf("tdo:%08x tdi:%08x\n",xfer.tdo[i], xfer.tdi[i]);
 #endif
 	return 0;
 }
-

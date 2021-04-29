@@ -2,47 +2,66 @@
 /*
  * Copyright 2020 Aspeed Technology Inc.
  */
-typedef enum jtag_xfer_mode {
+enum jtag_xfer_mode {
 	HW_MODE = 0,
-	SW_MODE
-} xfer_mode;
-
-struct runtest_idle {
-	xfer_mode 	mode;		//0 :HW mode, 1: SW mode
-	unsigned char 	reset;	//Test Logic Reset
-	unsigned char 	end;	//o: idle, 1: ir pause, 2: drpause
-	unsigned int 	tck;	//The number of tck
+	SW_MODE,
 };
 
-struct sir_xfer {
-	xfer_mode 	mode;		//0 :HW mode, 1: SW mode
-	unsigned short length;	//bits
+enum jtag_xfer_type {
+	JTAG_SIR_XFER = 0,
+	JTAG_SDR_XFER = 1,
+};
+
+enum jtag_endstate {
+	JTAG_TLRESET,
+	JTAG_IDLE,
+	JTAG_PAUSEDR,
+	JTAG_PAUSEIR,
+	JTAG_SHIFTDR,
+	JTAG_SHIFTIR
+};
+
+struct jtag_runtest_idle {
+	enum jtag_xfer_mode mode;
+	enum jtag_endstate end;
+	unsigned int tck;
+};
+
+struct jtag_xfer {
+	enum jtag_xfer_mode mode;
+	enum jtag_xfer_type type;
+	unsigned short length;
 	unsigned int *tdi;
 	unsigned int *tdo;
-	unsigned char endir;	//0: idle, 1:pause
+	enum jtag_endstate end_sts;
 };
 
-struct sdr_xfer {
-	xfer_mode 	mode;		//0 :HW mode, 1: SW mode
-	unsigned char 	direct; // 0 ; read , 1 : write
-	unsigned short length;	//bits
-	unsigned int *tdio;
-	unsigned char enddr;	//0: idle, 1:pause
+struct io_xfer {
+	enum jtag_xfer_mode mode;
+	unsigned long Address;
+	unsigned long Data;
 };
 
-#define JTAGIOC_BASE       'T'
+struct trst_reset {
+	unsigned long operation;
+	unsigned long Data;
+};
 
-#define ASPEED_JTAG_IOCRUNTEST		_IOW(JTAGIOC_BASE, 0, struct runtest_idle)
-#define ASPEED_JTAG_IOCSIR			_IOWR(JTAGIOC_BASE, 1, struct sir_xfer)
-#define ASPEED_JTAG_IOCSDR			_IOWR(JTAGIOC_BASE, 2, struct sdr_xfer)
-#define ASPEED_JTAG_SIOCFREQ		_IOW(JTAGIOC_BASE, 3, unsigned int)
-#define ASPEED_JTAG_GIOCFREQ		_IOR(JTAGIOC_BASE, 4, unsigned int)
+#define JTAGIOC_BASE 'T'
 
+#define ASPEED_JTAG_IOCRUNTEST _IOW(JTAGIOC_BASE, 0, struct jtag_runtest_idle)
+#define ASPEED_JTAG_IOCXFER _IOWR(JTAGIOC_BASE, 1, struct jtag_xfer)
+#define ASPEED_JTAG_SIOCFREQ _IOW(JTAGIOC_BASE, 2, unsigned int)
+#define ASPEED_JTAG_GIOCFREQ _IOR(JTAGIOC_BASE, 3, unsigned int)
+#define ASPEED_JTAG_IOWRITE _IOW(JTAGIOC_BASE, 4, struct io_xfer)
+#define ASPEED_JTAG_IOREAD _IOR(JTAGIOC_BASE, 5, struct io_xfer)
+#define ASPEED_JTAG_RESET _IOW(JTAGIOC_BASE, 6, struct io_xfer)
+#define ASPEED_JTAG_TRST_RESET _IOW(JTAGIOC_BASE, 7, struct trst_reset)
+#define ASPEED_JTAG_RUNTCK _IOW(JTAGIOC_BASE, 8, struct io_xfer)
 /******************************************************************************************************************/
-extern int ast_jtag_open(char *dev);
-extern void ast_jtag_close(void);
-extern unsigned int ast_get_jtag_freq(void);
-extern int ast_set_jtag_freq(unsigned int freq);
-extern int ast_jtag_run_test_idle(unsigned char reset, unsigned char end, unsigned int tck);
-extern int ast_jtag_sir_xfer(unsigned char endir, unsigned int len, unsigned int *out, unsigned int *in);
-extern int ast_jtag_sdr_xfer(unsigned char enddr, unsigned int len, unsigned int *out, unsigned int *in);
+int ast_jtag_open(char *dev);
+void ast_jtag_close(void);
+unsigned int ast_get_jtag_freq(void);
+int ast_set_jtag_freq(unsigned int freq);
+int ast_jtag_run_test_idle(unsigned char end, unsigned int tck);
+int ast_jtag_xfer(unsigned char endsts, unsigned int len, unsigned int *out, unsigned int *in, enum jtag_xfer_type type);

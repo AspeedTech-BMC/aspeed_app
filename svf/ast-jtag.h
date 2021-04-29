@@ -18,7 +18,8 @@ enum jtag_endstate {
 	JTAG_PAUSEDR,
 	JTAG_PAUSEIR,
 	JTAG_SHIFTDR,
-	JTAG_SHIFTIR
+	JTAG_SHIFTIR,
+	JTAG_UNSUPPORT
 };
 
 struct jtag_runtest_idle {

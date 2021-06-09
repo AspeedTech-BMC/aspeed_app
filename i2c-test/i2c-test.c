@@ -64,7 +64,6 @@
 #define DEF_XFER_BUF_SIZE  128
 
 int debug = 0;
-
 struct thread_data {
 	char filename[512];
 	uint8_t slave_addr;
@@ -206,24 +205,28 @@ void *i2c_master_thread(void *arg)
 	int xfer_length 	= master_data->xfer_size;
 	uint8_t *data 		= master_data->xfer_buf;	
 	int fd;
+	int result = 0;
+	int xfer_cnt = 0;
 
+	if(!continuous_flag)
+		printf("MM loop_cnt %d\n", loop_cnt);
+	
 	fd = open(master_data->filename, O_RDWR);
 	if (fd < 0) {
 		printf("can't open %s \n", master_data->filename);
 		return NULL;
 	}
 
-	printf("write slave address [%x] \n", master_data->slave_addr);
 	if (ioctl(fd, I2C_SLAVE, master_data->slave_addr) < 0) {
 		perror("i2cSetAddress");
 		return NULL;
 	}
 
-	while (continuous_flag) {
-//		printf("[%d]:Mw [%x] len %d \n", serial, master_data->slave_addr, xfer_length);
-//		data[0] = serial;
+	while (1) {
+		if (debug) printf("[%d]:Mw [%x] len %d \n", xfer_cnt, master_data->slave_addr, xfer_length);
 		if (write(fd, data, xfer_length) != xfer_length) {
 			perror("write fail \n");
+			result = 1;
 			break;
 		}
 		
@@ -231,11 +234,19 @@ void *i2c_master_thread(void *arg)
 			loop_cnt--;
 			if(!loop_cnt) break;
 		}
+		xfer_cnt++;
+		if (debug) sleep(1);
 	}
 
 	close(fd);
 	
-	return NULL;	
+	if (debug) printf("master thread end \n");
+
+	if(result) 
+		return (void *)1;
+	else
+		return NULL;
+
 }
 
 void *i2c_slave_thread(void *arg)
@@ -249,6 +260,10 @@ void *i2c_slave_thread(void *arg)
     int i, r;
     struct pollfd pfd;
     struct timespec ts;
+	int result = 0;
+
+	if(!continuous_flag)
+		printf("SS loop_cnt %d\n", loop_cnt);
 
     pfd.fd = open(slave_data->filename, O_RDONLY | O_NONBLOCK);
     if (pfd.fd < 0) {
@@ -258,7 +273,7 @@ void *i2c_slave_thread(void *arg)
 
     pfd.events = POLLPRI;
 
-    while (continuous_flag) {
+    while (1) {
         r = poll(&pfd, 1, 5000);
         if (r < 0)
             break;
@@ -271,7 +286,7 @@ void *i2c_slave_thread(void *arg)
         if (r <= 0)
             continue;
 
-		if(debug) {
+		if(debug || continuous_flag) {
 	        clock_gettime(CLOCK_MONOTONIC, &ts);
 	        printf("[%ld.%.9ld] :", ts.tv_sec, ts.tv_nsec);
 	        for (i = 0; i < r; i++)
@@ -285,6 +300,7 @@ void *i2c_slave_thread(void *arg)
 
 		if(compare_pattern(slave_data->xfer_buf, slave_data->pattern, slave_data->xfer_size + 1)) {
 			printf("compare fail ----- \n");
+			result = 1;
 			break;
 		}
 
@@ -296,8 +312,15 @@ void *i2c_slave_thread(void *arg)
     }
 
     close(pfd.fd);
+	if (debug) printf("slave thread end \n");
+
 	
-	return NULL;
+	if(result) 
+		return (void *)1;
+	else
+		return NULL;
+
+
 }
 
 
@@ -310,9 +333,10 @@ int main(int argc, char *argv[])
 	struct thread_data data_pthread_master_tx;
 	struct thread_data data_pthread_slave_rx;
 
+	void *master_ret, *slave_ret;
 	int master_flag		= 0;
 	int slave_flag		= 0;
-	int loop_cnt 		= -1;
+	int loop_cnt 		= 0;
 	int xfer_size		= 0;
 	unsigned char pattern_buf[2*DEF_XFER_BUF_SIZE];
 	unsigned char recv_buf[2*DEF_XFER_BUF_SIZE];
@@ -347,18 +371,12 @@ int main(int argc, char *argv[])
 			master_flag = 1;
 			data_pthread_master_tx.xfer_buf = pattern_buf;
 			strcpy(data_pthread_master_tx.filename, optarg);
-			printf("master : [%s]\n", data_pthread_master_tx.filename);
-			pthread_create(&(pthread_master_tx), NULL, i2c_master_thread,
-						   &data_pthread_master_tx);
 			break; 
 		case 's':
 			/* -s /sys/bus/i2c/devices/i2c-6/6-003a/slave-mqueue */
 			slave_flag = 1;
 			data_pthread_slave_rx.xfer_buf = recv_buf;
 			strcpy(data_pthread_slave_rx.filename, optarg);
-			printf("slave : [%s]\n", data_pthread_slave_rx.filename);
-			pthread_create(&(pthread_slave_rx), NULL, i2c_slave_thread,
-						   &data_pthread_slave_rx);
 			break;
 		case 'c':	//count
 			loop_cnt = strtoul(optarg, 0, 0);
@@ -385,24 +403,50 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	if(loop_cnt < 0) {
+	if(loop_cnt == 0) {
+		//if no loop cnt, will be continuous test
 		data_pthread_master_tx.continuous_flag = 1;
 		data_pthread_slave_rx.continuous_flag = 1;
+	} else {
+		data_pthread_master_tx.continuous_flag = 0;
+		data_pthread_slave_rx.continuous_flag = 0;
 	}
-
+		
 	if (!master_flag && !slave_flag) {
 		usage(stdout, argc, argv);
 		exit(EXIT_FAILURE);
 	}
+
+	if (master_flag) {
+		printf("master : [%s] : ", data_pthread_master_tx.filename);
+		pthread_create(&(pthread_master_tx), NULL, i2c_master_thread,
+					   &data_pthread_master_tx);
+		printf("write slave address [0x%x]\n", data_pthread_master_tx.slave_addr);
+	}
+
 	if (slave_flag) {
-		if(pthread_join(pthread_slave_rx, NULL))
-			printf("slave join error \n");
+		printf("slave : [%s]\n", data_pthread_slave_rx.filename);
+		pthread_create(&(pthread_slave_rx), NULL, i2c_slave_thread,
+					   &data_pthread_slave_rx);
 	}
 
 	if (master_flag) {
-		if(pthread_join(pthread_master_tx, NULL))
-			printf("master join error \n");
+		pthread_join(pthread_master_tx, &master_ret);
+		if (master_ret == PTHREAD_CANCELED)
+			printf("The thread was canceled - ");
+		if(debug) printf("Returned value %d - ", (int)master_ret);
 	}
+	
+	if (slave_flag) {
+		pthread_join(pthread_slave_rx, &slave_ret);
+		 if (slave_ret == PTHREAD_CANCELED)
+			printf("The thread was canceled - ");
+
+		if(debug) printf("Returned value %d - ", (int)slave_ret);
+	}
+
+	if (master_ret || slave_ret) printf(" ================= Fail =================\n");
+	else printf(" ================= Pass =================\n");
 
 	return 0;
 }

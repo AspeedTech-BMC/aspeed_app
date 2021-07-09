@@ -27,8 +27,6 @@
 enum { LOG_TRACE, LOG_DEBUG, LOG_INFO, LOG_WARN, LOG_ERROR, LOG_FATAL };
 int loglevel = LOG_WARN;
 
-extern int mode;
-
 static void
 usage(FILE *fp, int argc, char **argv)
 {
@@ -75,6 +73,7 @@ int main(int argc, char *argv[])
 	int svf = 0;
 	unsigned int freq = 0;
 	unsigned int jtag_freq = 0;
+	uint8_t sw_mode = 0;
 
 	while ((option = getopt_long(argc, argv, short_options, long_options, NULL)) != (char) -1) {
 		switch (option) {
@@ -108,7 +107,7 @@ int main(int argc, char *argv[])
 			}
 			break;
 		case 's':
-			mode = 1;
+			sw_mode = 1;
 			break;
 		default:
 			usage(stdout, argc, argv);
@@ -123,6 +122,7 @@ int main(int argc, char *argv[])
 	if (ast_jtag_open(dev_name))
 		exit(1);
 
+	ast_set_jtag_mode(sw_mode);
 	//show current ast jtag configuration
 	jtag_freq = ast_get_jtag_freq();
 

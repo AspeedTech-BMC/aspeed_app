@@ -36,8 +36,6 @@
 #include "svf.h"
 #include "ast-jtag.h"
 
-#define DIV_ROUND_UP(n,d) (((n) + (d) - 1) / (d))
-
 #define ERROR_OK                        (0)
 #define ERROR_NO_CONFIG_FILE            (-2)
 #define ERROR_BUF_TOO_SMALL             (-3)
@@ -53,27 +51,25 @@ enum { LOG_TRACE, LOG_DEBUG, LOG_INFO, LOG_WARN, LOG_ERROR, LOG_FATAL };
 #define log_printf_lf(dbg_lvl, file, line, function, fmt, ...) \
         DBG_log(dbg_lvl, fmt)
 extern int loglevel;
-static int step;
 static unsigned int frequency;
-static int jtag_dev;
 
 unsigned char tap_mapping[] = {
-    [TAP_DREXIT2] = JTAG_UNSUPPORT,
-    [TAP_DREXIT1] = JTAG_UNSUPPORT,
-    [TAP_DRSHIFT] = JTAG_SHIFTDR,
-    [TAP_DRPAUSE] = JTAG_PAUSEDR,
-    [TAP_IRSELECT] = JTAG_UNSUPPORT,
-    [TAP_DRUPDATE] = JTAG_UNSUPPORT,
-    [TAP_DRCAPTURE] = JTAG_UNSUPPORT,
-    [TAP_DRSELECT] = JTAG_UNSUPPORT,
-    [TAP_IREXIT2] = JTAG_UNSUPPORT,
-    [TAP_IREXIT1] = JTAG_UNSUPPORT,
-    [TAP_IRSHIFT] = JTAG_SHIFTIR,
-    [TAP_IRPAUSE] = JTAG_PAUSEIR,
-    [TAP_IDLE] = JTAG_IDLE,
-    [TAP_IRUPDATE] = JTAG_UNSUPPORT,
-    [TAP_IRCAPTURE] = JTAG_UNSUPPORT,
-    [TAP_RESET] = JTAG_TLRESET
+    [TAP_DREXIT2] = JTAG_STATE_EXIT2DR,
+    [TAP_DREXIT1] = JTAG_STATE_EXIT1DR,
+    [TAP_DRSHIFT] = JTAG_STATE_SHIFTDR,
+    [TAP_DRPAUSE] = JTAG_STATE_PAUSEDR,
+    [TAP_IRSELECT] = JTAG_STATE_SELECTIR,
+    [TAP_DRUPDATE] = JTAG_STATE_UPDATEDR,
+    [TAP_DRCAPTURE] = JTAG_STATE_CAPTUREDR,
+    [TAP_DRSELECT] = JTAG_STATE_SELECTDR,
+    [TAP_IREXIT2] = JTAG_STATE_EXIT2IR,
+    [TAP_IREXIT1] = JTAG_STATE_EXIT1IR,
+    [TAP_IRSHIFT] = JTAG_STATE_SHIFTIR,
+    [TAP_IRPAUSE] = JTAG_STATE_PAUSEIR,
+    [TAP_IDLE] = JTAG_STATE_IDLE,
+    [TAP_IRUPDATE] = JTAG_STATE_UPDATEIR,
+    [TAP_IRCAPTURE] = JTAG_STATE_CAPTUREIR,
+    [TAP_RESET] = JTAG_STATE_TLRESET
 };
 
 void DBG_log(int level, const char *format, ...)

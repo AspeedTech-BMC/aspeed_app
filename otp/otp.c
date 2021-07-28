@@ -38,17 +38,6 @@
 #define OTP_KEY_TYPE_VAULT		4
 #define OTP_KEY_TYPE_HMAC		5
 
-#define OTP_BASE				0x1e6f2000
-#define OTP_PROTECT_KEY			OTP_BASE
-#define OTP_COMMAND				(OTP_BASE + 0x4)
-#define OTP_TIMING				(OTP_BASE + 0x8)
-#define OTP_ADDR				(OTP_BASE + 0x10)
-#define OTP_STATUS				(OTP_BASE + 0x14)
-#define OTP_COMPARE_1			(OTP_BASE + 0x20)
-#define OTP_COMPARE_2			(OTP_BASE + 0x24)
-#define OTP_COMPARE_3			(OTP_BASE + 0x28)
-#define OTP_COMPARE_4			(OTP_BASE + 0x2c)
-
 #define OTP_MAGIC		        "SOCOTP"
 #define CHECKSUM_LEN	        32
 #define OTP_INC_DATA	        BIT(31)
@@ -292,6 +281,20 @@ static uint32_t chip_version(void)
 	}
 
 	return ver;
+}
+
+static uint32_t sw_revid(u32 *sw_rid)
+{
+	int ret;
+
+	ret = ioctl(info_cb.otp_fd, ASPEED_OTP_SW_RID, sw_rid);
+
+	if (ret < 0) {
+		printf("ioctl err:%d\n", ret);
+		return OTP_FAILURE;
+	}
+
+	return OTP_SUCCESS;
 }
 
 static int _otp_read(uint32_t offset, int len, uint32_t *data, unsigned long req)
@@ -1570,8 +1573,10 @@ static int otp_prog_bit(int mode, int otp_dw_offset, int bit_offset, int value, 
 static int otp_update_rid(uint32_t update_num, int force)
 {
 	uint32_t otp_rid[2];
+	u32 sw_rid[2];
 	char update_queue[64];
 	int rid_num = 0;
+	int sw_rid_num = 0;
 	int cursor;
 	int bit_offset;
 	int dw_offset;
@@ -1582,7 +1587,22 @@ static int otp_update_rid(uint32_t update_num, int force)
 	if (otp_read_conf_buf(0xa, 2, otp_rid))
 		return OTP_FAILURE;
 
+	if (sw_revid(sw_rid))
+		return OTP_FAILURE;
+
 	rid_num = get_rid_num(otp_rid);
+	sw_rid_num = get_rid_num(sw_rid);
+
+	if (sw_rid_num < 0) {
+		printf("SW revision id is invalid, please check.\n");
+		return OTP_FAILURE;
+	}
+
+	if (update_num > sw_rid_num) {
+		printf("current SW revision ID: 0x%x\n", sw_rid_num);
+		printf("update number could not bigger than current SW revision id\n");
+		return OTP_FAILURE;
+	}
 
 	if (rid_num < 0) {
 		printf("Currennt OTP revision ID cannot handle by this command,\n"
@@ -1595,8 +1615,12 @@ static int otp_update_rid(uint32_t update_num, int force)
 	otp_print_revid(otp_rid);
 	printf("input update number: 0x%X\n", update_num);
 
-	if (rid_num >= update_num) {
+	if (rid_num > update_num) {
 		printf("OTP rev_id is bigger than 0x%X\n", update_num);
+		printf("Skip\n");
+		return OTP_FAILURE;
+	} else if (rid_num == update_num) {
+		printf("OTP rev_id is same as input\n");
 		printf("Skip\n");
 		return OTP_FAILURE;
 	}
@@ -1931,7 +1955,9 @@ static int do_otpupdate(int argc, char *const argv[])
 static int do_otprid(int argc, char *const argv[])
 {
 	uint32_t otp_rid[2];
+	u32 sw_rid[2];
 	int rid_num = 0;
+	int sw_rid_num = 0;
 	int ret;
 
 	if (argc != 1)
@@ -1940,8 +1966,13 @@ static int do_otprid(int argc, char *const argv[])
 	if (otp_read_conf_buf(0xa, 2, otp_rid))
 		return OTP_FAILURE;
 
-	rid_num = get_rid_num(otp_rid);
+	if (sw_revid(sw_rid))
+		return OTP_FAILURE;
 
+	rid_num = get_rid_num(otp_rid);
+	sw_rid_num = get_rid_num(sw_rid);
+
+	printf("current SW revision ID: 0x%x\n", sw_rid_num);
 	if (rid_num >= 0) {
 		printf("current OTP revision ID: 0x%x\n", rid_num);
 		ret = OTP_SUCCESS;

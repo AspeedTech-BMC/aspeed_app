@@ -593,6 +593,7 @@ static int otp_print_conf_image(struct otp_image_layout *image_layout)
 	uint32_t otp_value;
 	uint32_t otp_ignore;
 	int fail = 0;
+	int mask_err;
 	int rid_num = 0;
 	char valid_bit[20];
 	int fz;
@@ -602,16 +603,26 @@ static int otp_print_conf_image(struct otp_image_layout *image_layout)
 	printf("DW    BIT        Value       Description\n");
 	printf("__________________________________________________________________________\n");
 	for (i = 0; i < info_cb.conf_info_len; i++) {
+		mask_err = 0;
 		dw_offset = conf_info[i].dw_offset;
 		bit_offset = conf_info[i].bit_offset;
 		mask = BIT(conf_info[i].length) - 1;
 		otp_value = (OTPCFG[dw_offset] >> bit_offset) & mask;
 		otp_ignore = (OTPCFG_IGNORE[dw_offset] >> bit_offset) & mask;
 
-		if (otp_ignore == mask)
-			continue;
-		else if (otp_ignore != 0)
-			fail = 1;
+		if (conf_info[i].value == OTP_REG_VALID_BIT) {
+			if (((otp_value + otp_ignore) & mask) != mask) {
+				fail = 1;
+				mask_err = 1;
+			}
+		} else {
+			if (otp_ignore == mask) {
+				continue;
+			} else if (otp_ignore != 0) {
+				fail = 1;
+				mask_err = 1;
+			}
+		}
 
 		if (otp_value != conf_info[i].value &&
 		    conf_info[i].value != OTP_REG_RESERVED &&
@@ -629,32 +640,32 @@ static int otp_print_conf_image(struct otp_image_layout *image_layout)
 		}
 		printf("0x%-10x", otp_value);
 
-		if (fail) {
+		if (mask_err) {
 			printf("Ignore mask error\n");
-		} else {
-			if (conf_info[i].value == OTP_REG_RESERVED) {
-				printf("Reserved\n");
-			} else if (conf_info[i].value == OTP_REG_VALUE) {
-				printf(conf_info[i].information, otp_value);
-				printf("\n");
-			} else if (conf_info[i].value == OTP_REG_VALID_BIT) {
-				if (otp_value != 0) {
-					for (j = 0; j < 7; j++) {
-						if (otp_value == (1 << j))
-							valid_bit[j * 2] = '1';
-						else
-							valid_bit[j * 2] = '0';
-						valid_bit[j * 2 + 1] = ' ';
-					}
-					valid_bit[15] = 0;
-				} else {
-					strcpy(valid_bit, "0 0 0 0 0 0 0 0\0");
+			continue;
+		}
+		if (conf_info[i].value == OTP_REG_RESERVED) {
+			printf("Reserved\n");
+		} else if (conf_info[i].value == OTP_REG_VALUE) {
+			printf(conf_info[i].information, otp_value);
+			printf("\n");
+		} else if (conf_info[i].value == OTP_REG_VALID_BIT) {
+			if (otp_value != 0) {
+				for (j = 0; j < 7; j++) {
+					if (otp_value == (1 << j))
+						valid_bit[j * 2] = '1';
+					else
+						valid_bit[j * 2] = '0';
+					valid_bit[j * 2 + 1] = ' ';
 				}
-				printf(conf_info[i].information, valid_bit);
-				printf("\n");
+				valid_bit[15] = 0;
 			} else {
-				printf("%s\n", conf_info[i].information);
+				strcpy(valid_bit, "0 0 0 0 0 0 0 0\0");
 			}
+			printf(conf_info[i].information, valid_bit);
+			printf("\n");
+		} else {
+			printf("%s\n", conf_info[i].information);
 		}
 	}
 
@@ -789,6 +800,7 @@ static int otp_print_strap_image(struct otp_image_layout *image_layout)
 	printf("__________________________________________________________________________________________\n");
 
 	for (i = 0; i < info_cb.strap_info_len; i++) {
+		fail = 0;
 		if (strap_info[i].bit_offset > 31) {
 			dw_offset = 1;
 			bit_offset = strap_info[i].bit_offset - 32;
@@ -1462,18 +1474,18 @@ static int otp_prog_image(uint8_t *buf, int nconfirm)
 		}
 		printf("Done\n");
 	}
-	if (otp_header->image_info & OTP_INC_STRAP) {
-		printf("programing strap region ...\n");
-		ret = otp_prog_strap(&image_layout);
+	if (otp_header->image_info & OTP_INC_CONF) {
+		printf("programing configuration region ...\n");
+		ret = otp_prog_conf(&image_layout);
 		if (ret != 0) {
 			printf("Error\n");
 			return ret;
 		}
 		printf("Done\n");
 	}
-	if (otp_header->image_info & OTP_INC_CONF) {
-		printf("programing configuration region ...\n");
-		ret = otp_prog_conf(&image_layout);
+	if (otp_header->image_info & OTP_INC_STRAP) {
+		printf("programing strap region ...\n");
+		ret = otp_prog_strap(&image_layout);
 		if (ret != 0) {
 			printf("Error\n");
 			return ret;

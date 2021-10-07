@@ -1531,7 +1531,7 @@ static int otp_prog_bit(int mode, int otp_dw_offset, int bit_offset, int value, 
 		} else {
 			if (otp_bit == 0 && value == 1) {
 				printf("OTPDATA%X[%X] = 1\n", otp_dw_offset, bit_offset);
-				printf("OTP is programed, which can't be writen\n");
+				printf("OTP is programed, which can't be written\n");
 				return OTP_FAILURE;
 			}
 		}
@@ -1617,8 +1617,8 @@ static int otp_update_rid(uint32_t update_num, int force)
 	}
 
 	if (rid_num < 0) {
-		printf("Currennt OTP revision ID cannot handle by this command,\n"
-		       "plase use 'otp pb' command to update it manually\n");
+		printf("Current OTP revision ID cannot handle by this command,\n"
+		       "please use 'otp pb' command to update it manually\n");
 		otp_print_revid(otp_rid);
 		return OTP_FAILURE;
 	}
@@ -1989,8 +1989,8 @@ static int do_otprid(int argc, char *const argv[])
 		printf("current OTP revision ID: 0x%x\n", rid_num);
 		ret = OTP_SUCCESS;
 	} else {
-		printf("Currennt OTP revision ID cannot handle by 'otp update',\n"
-		       "plase use 'otp pb' command to update it manually\n"
+		printf("Current OTP revision ID cannot handle by 'otp update',\n"
+		       "please use 'otp pb' command to update it manually\n"
 		       "current OTP revision ID\n");
 		ret = OTP_FAILURE;
 	}

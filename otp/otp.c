@@ -107,6 +107,8 @@ struct otp_info_cb {
 	int conf_info_len;
 	const struct otpkey_type *key_info;
 	int key_info_len;
+	const struct scu_info *scu_info;
+	int scu_info_len;
 };
 
 struct otp_image_layout {
@@ -568,6 +570,50 @@ static void otp_print_revid(uint32_t *rid)
 		printf("%d  ", (rid[j] >> bit_offset) & 0x1);
 		if ((i + 1) % 16 == 0)
 			printf("\n");
+	}
+}
+
+static void otp_print_scu_info(void)
+{
+	const struct scu_info *scu_info = info_cb.scu_info;
+	u32 OTPCFG[2];
+	u32 scu_offset;
+	u32 bit_offset;
+	u32 reg_p;
+	u32 length;
+	int i, j;
+
+	otp_read_conf(28, &OTPCFG[0]);
+	otp_read_conf(29, &OTPCFG[1]);
+	printf("SCU     BIT   reg_protect     Description\n");
+	printf("____________________________________________________________________\n");
+	for (i = 0; i < info_cb.scu_info_len; i++) {
+		length = scu_info[i].length;
+		for (j = 0; j < length; j++) {
+			if (scu_info[i].bit_offset + j < 32) {
+				scu_offset = 0x500;
+				bit_offset = scu_info[i].bit_offset + j;
+				reg_p = (OTPCFG[0] >> bit_offset) & 0x1;
+			} else {
+				scu_offset = 0x510;
+				bit_offset = scu_info[i].bit_offset + j - 32;
+				reg_p = (OTPCFG[1] >> bit_offset) & 0x1;
+			}
+			printf("0x%-6X", scu_offset);
+			printf("0x%-4X", bit_offset);
+			printf("0x%-13X", reg_p);
+			if (length == 1) {
+				printf(" %s\n", scu_info[i].information);
+				continue;
+			}
+
+			if (j == 0)
+				printf("/%s\n", scu_info[i].information);
+			else if (j == length - 1)
+				printf("\\ \"\n");
+			else
+				printf("| \"\n");
+		}
 	}
 }
 
@@ -1577,7 +1623,7 @@ static int otp_update_rid(uint32_t update_num, int force)
 			dw_offset = 0xb;
 			bit_offset = i - 32;
 		}
-		printf("OTPCFG%X[%d]", dw_offset, bit_offset);
+		printf("OTPCFG%X[%X]", dw_offset, bit_offset);
 		if (i + 1 != update_num)
 			printf(", ");
 	}
@@ -1601,7 +1647,7 @@ static int otp_update_rid(uint32_t update_num, int force)
 			bit_offset = i - 32;
 		}
 		if (otp_prog_conf_b(dw_offset, bit_offset, 1)) {
-			printf("OTPCFG%X[%d] programming failed\n", dw_offset, bit_offset);
+			printf("OTPCFG%X[%X] programming failed\n", dw_offset, bit_offset);
 			ret = OTP_FAILURE;
 			break;
 		}
@@ -1786,6 +1832,8 @@ static int do_otpinfo(int argc, char *const argv[])
 			}
 		}
 		otp_print_strap_info(view);
+	} else if (!strcmp(argv[1], "scu")) {
+		otp_print_scu_info();
 	} else {
 		return OTP_USAGE;
 	}
@@ -1793,22 +1841,13 @@ static int do_otpinfo(int argc, char *const argv[])
 	return OTP_SUCCESS;
 }
 
-static int _do_otpprotect(int argc, char *const argv[], int preg)
+static int do_otpprotect(int argc, char *const argv[])
 {
 	int input;
 	int bit_offset;
 	int prog_address;
 	int ret;
 	uint32_t read;
-	char info[10];
-
-	if (preg) {
-		sprintf(info, "register ");
-		prog_address = 28;
-	} else {
-		info[0] = 0;
-		prog_address = 30;
-	}
 
 	if (argc == 3) {
 		if (strcmp(argv[1], "o"))
@@ -1816,7 +1855,7 @@ static int _do_otpprotect(int argc, char *const argv[], int preg)
 		input = strtoul(argv[2], NULL, 16);
 	} else if (argc == 2) {
 		input = strtoul(argv[1], NULL, 16);
-		printf("OTPSTRAP[%d] %swill be protected\n", input, info);
+		printf("OTPSTRAP[%X] will be protected\n", input);
 		printf("type \"YES\" (no quotes) to continue:\n");
 		if (!confirm_yesno()) {
 			printf(" Aborting\n");
@@ -1828,41 +1867,89 @@ static int _do_otpprotect(int argc, char *const argv[], int preg)
 
 	if (input < 32) {
 		bit_offset = input;
+		prog_address = 0xe0c;
 	} else if (input < 64) {
 		bit_offset = input - 32;
-		prog_address++;
+		prog_address = 0xe0e;
 	} else {
 		return OTP_USAGE;
 	}
 
 	otp_read_conf(prog_address, &read);
 	if (((read >> bit_offset) & 1) == 1) {
-		printf("OTPSTRAP[%d] %salready protected\n", input, info);
+		printf("OTPSTRAP[%X] already protected\n", input);
 		return OTP_SUCCESS;
 	}
 
 	ret = otp_prog_conf_b(prog_address, bit_offset, 1);
 
 	if (ret == OTP_SUCCESS)
-		printf("OTPSTRAP[%d] %sis protected\n", input, info);
+		printf("OTPSTRAP[%X] is protected\n", input);
 	else
-		printf("Protect OTPSTRAP[%d] %sfail\n", input, info);
+		printf("Protect OTPSTRAP[%X] fail\n", input);
 
 	return ret;
 }
 
-static int do_otpprotect(int argc, char *const argv[])
+static int do_otp_scuprotect(int argc, char *const argv[])
 {
-	return _do_otpprotect(argc, argv, 0);
-}
+	u32 scu_offset;
+	u32 bit_offset;
+	u32 conf_offset;
+	u32 prog_address;
+	char force;
+	int ret;
+	uint32_t read;
 
-static int do_otprprotect(int argc, char *const argv[])
-{
-	if (info_cb.version == OTP_A0) {
-		printf("A0 is not support OTPSTRAP register protection\n");
+	if (argc != 4 && argc != 3)
+		return OTP_USAGE;
+
+	if (!strcmp(argv[1], "o")) {
+		scu_offset = strtoul(argv[2], NULL, 16);
+		bit_offset = strtoul(argv[3], NULL, 16);
+		force = 1;
+	} else {
+		scu_offset = strtoul(argv[1], NULL, 16);
+		bit_offset = strtoul(argv[2], NULL, 16);
+		force = 0;
+	}
+	if (scu_offset == 0x500) {
+		prog_address = 0xe08;
+		conf_offset = 28;
+	} else if (scu_offset == 0x510) {
+		prog_address = 0xe0a;
+		conf_offset = 29;
+	} else {
+		return OTP_USAGE;
+	}
+	if (bit_offset < 0 || bit_offset > 31)
+		return OTP_USAGE;
+
+	if (!force) {
+		printf("OTPCONF%X[%X] will be programmed\n", conf_offset, bit_offset);
+		printf("SCU%X[%X] will be protected\n", scu_offset, bit_offset);
+		printf("type \"YES\" (no quotes) to continue:\n");
+		if (!confirm_yesno()) {
+			printf(" Aborting\n");
+			return OTP_FAILURE;
+		}
+	}
+
+	otp_read_conf(prog_address, &read);
+	if (((read >> bit_offset) & 1) == 1) {
+		printf("OTPCONF%X[%X] already programmed\n", conf_offset, bit_offset);
+		return OTP_SUCCESS;
+	}
+
+	ret = otp_prog_conf_b(prog_address, bit_offset, 1);
+
+	if (ret) {
+		printf("Program OTPCONF%X[%X] fail\n", conf_offset, bit_offset);
 		return OTP_FAILURE;
 	}
-	return _do_otpprotect(argc, argv, 1);
+
+	printf("OTPCONF%X[%X] programmed success\n", conf_offset, bit_offset);
+	return OTP_SUCCESS;
 }
 
 static int do_otpver(char *ver_name)
@@ -1938,11 +2025,12 @@ static void usage(void)
 	       "otp read strap <strap_bit_offset> <bit_count>\n"
 	       "otp info strap [v]\n"
 	       "otp info conf [otp_dw_offset]\n"
+	       "otp info scu\n"
 	       "otp prog [o] <image_path>\n"
 	       "otp pb conf|data [o] <otp_dw_offset> <bit_offset> <value>\n"
 	       "otp pb strap [o] <bit_offset> <value>\n"
 	       "otp protect [o] <bit_offset>\n"
-	       "otp rprotect [o] <bit_offset>\n"
+	       "otp scuprotect [o] <bit_offset>\n"
 	       "otp update [o] <revision_id>\n"
 	       "otp rid\n");
 }
@@ -1992,6 +2080,8 @@ int main(int argc, char *argv[])
 		info_cb.strap_info_len = ARRAY_SIZE(a1_strap_info);
 		info_cb.key_info = a1_key_type;
 		info_cb.key_info_len = ARRAY_SIZE(a1_key_type);
+		info_cb.scu_info = a1_scu_info;
+		info_cb.scu_info_len = ARRAY_SIZE(a1_scu_info);
 		sprintf(ver_name, "A1");
 		break;
 	case OTP_A2:
@@ -2002,6 +2092,10 @@ int main(int argc, char *argv[])
 		info_cb.strap_info_len = ARRAY_SIZE(a1_strap_info);
 		info_cb.key_info = a2_key_type;
 		info_cb.key_info_len = ARRAY_SIZE(a2_key_type);
+		info_cb.scu_info = a1_scu_info;
+		info_cb.scu_info_len = ARRAY_SIZE(a1_scu_info);
+		info_cb.scu_info = a1_scu_info;
+		info_cb.scu_info_len = ARRAY_SIZE(a1_scu_info);
 		sprintf(ver_name, "A2");
 		break;
 	case OTP_A3:
@@ -2037,8 +2131,8 @@ int main(int argc, char *argv[])
 		ret = do_otppb(argc, argv);
 	else if (!strcmp(sub_cmd, "protect"))
 		ret = do_otpprotect(argc, argv);
-	else if (!strcmp(sub_cmd, "rprotect"))
-		ret = do_otprprotect(argc, argv);
+	else if (!strcmp(sub_cmd, "scuprotect"))
+		ret = do_otp_scuprotect(argc, argv);
 	else if (!strcmp(sub_cmd, "prog"))
 		ret = do_otpprog(argc, argv);
 	else if (!strcmp(sub_cmd, "update"))

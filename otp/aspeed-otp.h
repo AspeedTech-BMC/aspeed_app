@@ -34,5 +34,6 @@ struct otp_prog {
 #define ASPEED_OTP_PROG_CONF _IOW(OTPIOC_BASE, 3, struct otp_prog)
 #define ASPEED_OTP_VER _IOR(OTPIOC_BASE, 4, unsigned int)
 #define ASPEED_OTP_SW_RID _IOR(OTPIOC_BASE, 5, u32*)
+#define ASPEED_SEC_KEY_NUM _IOR(OTPIOC_BASE, 6, u32*)
 
 #endif /* _UAPI_LINUX_ASPEED_JTAG_H */

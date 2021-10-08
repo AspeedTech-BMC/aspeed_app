@@ -98,6 +98,16 @@ struct otpkey_type {
 	char information[110];
 };
 
+struct otp_pro_sts {
+	char mem_lock;
+	char pro_key_ret;
+	char pro_strap;
+	char pro_conf;
+	char pro_data;
+	char pro_sec;
+	u32 sec_size;
+};
+
 struct otp_info_cb {
 	int otp_fd;
 	int version;
@@ -109,6 +119,7 @@ struct otp_info_cb {
 	int key_info_len;
 	const struct scu_info *scu_info;
 	int scu_info_len;
+	struct otp_pro_sts pro_sts;
 };
 
 struct otp_image_layout {
@@ -295,6 +306,20 @@ static uint32_t sw_revid(u32 *sw_rid)
 	int ret;
 
 	ret = ioctl(info_cb.otp_fd, ASPEED_OTP_SW_RID, sw_rid);
+
+	if (ret < 0) {
+		printf("ioctl err:%d\n", ret);
+		return OTP_FAILURE;
+	}
+
+	return OTP_SUCCESS;
+}
+
+static uint32_t sec_key_num(u32 *key_num)
+{
+	int ret;
+
+	ret = ioctl(info_cb.otp_fd, ASPEED_SEC_KEY_NUM, key_num);
 
 	if (ret < 0) {
 		printf("ioctl err:%d\n", ret);
@@ -786,7 +811,7 @@ static int otp_print_conf_info(int input_offset)
 		} else if (conf_info[i].value == OTP_REG_VALID_BIT) {
 			if (otp_value != 0) {
 				for (j = 0; j < 7; j++) {
-					if (otp_value == (1 << j))
+					if (otp_value & (1 << j))
 						valid_bit[j * 2] = '1';
 					else
 						valid_bit[j * 2] = '0';
@@ -1413,6 +1438,35 @@ static int otp_prog_image(uint8_t *buf, int nconfirm)
 		return OTP_FAILURE;
 	}
 
+	if (info_cb.pro_sts.mem_lock) {
+		printf("OTP memory is locked\n");
+		return OTP_FAILURE;
+	}
+	if (otp_header->image_info & OTP_INC_DATA) {
+		if (info_cb.pro_sts.pro_data) {
+			printf("OTP data region is protected\n");
+			ret = -1;
+		}
+		if (info_cb.pro_sts.pro_sec) {
+			printf("OTP secure region is protected\n");
+			ret = -1;
+		}
+	}
+	if (otp_header->image_info & OTP_INC_CONF) {
+		if (info_cb.pro_sts.pro_conf) {
+			printf("OTP config region is protected\n");
+			ret = -1;
+		}
+	}
+	if (otp_header->image_info & OTP_INC_STRAP) {
+		if (info_cb.pro_sts.pro_strap) {
+			printf("OTP strap region is protected\n");
+			ret = -1;
+		}
+	}
+	if (ret == -1)
+		return OTP_FAILURE;
+
 	if (!nconfirm) {
 		if (otp_header->image_info & OTP_INC_DATA) {
 			printf("\nOTP data region :\n");
@@ -1748,6 +1802,8 @@ static int do_otppb(int argc, char *const argv[])
 	int otp_addr = 0;
 	int bit_offset;
 	int value;
+	int ret;
+	u32 otp_strap_pro;
 
 	if (argc != 4 && argc != 5 && argc != 6)
 		return OTP_USAGE;
@@ -1802,6 +1858,104 @@ static int do_otppb(int argc, char *const argv[])
 	if (value != 0 && value != 1)
 		return OTP_USAGE;
 
+	ret = 0;
+	if (info_cb.pro_sts.mem_lock) {
+		printf("OTP memory is locked\n");
+		return OTP_USAGE;
+	}
+	if (mode == OTP_REGION_DATA) {
+		if (info_cb.pro_sts.sec_size == 0) {
+			if (info_cb.pro_sts.pro_data) {
+				printf("OTP data region is protected\n");
+				ret = -1;
+			}
+		} else if (otp_addr < info_cb.pro_sts.sec_size && otp_addr >= 16) {
+			printf("OTP secure region is not readable, skip it to prevent unpredictable result\n");
+			ret = -1;
+		} else if (otp_addr < info_cb.pro_sts.sec_size) {
+			// header region(0x0~0x40) is still readable even secure region is set.
+			if (info_cb.pro_sts.pro_sec) {
+				printf("OTP secure region is protected\n");
+				ret = -1;
+			}
+		} else if (info_cb.pro_sts.pro_data) {
+			printf("OTP data region is protected\n");
+			ret = -1;
+		}
+	} else if (mode == OTP_REGION_CONF) {
+		if (otp_addr != 4 && otp_addr != 10 && otp_addr != 11 && otp_addr < 16) {
+			if (info_cb.pro_sts.pro_conf) {
+				printf("OTP config region is protected\n");
+				ret = -1;
+			}
+		} else if (otp_addr == 10 || otp_addr == 11) {
+			u32 otp_rid[2];
+			u32 sw_rid[2];
+			u64 *otp_rid64 = (u64 *)otp_rid;
+			u64 *sw_rid64 = (u64 *)sw_rid;
+
+			otp_read_conf(10, &otp_rid[0]);
+			otp_read_conf(11, &otp_rid[1]);
+			if (sw_revid(sw_rid))
+				return OTP_FAILURE;
+
+			if (otp_addr == 10)
+				otp_rid[0] |= 1 << bit_offset;
+			else
+				otp_rid[1] |= 1 << bit_offset;
+
+			if (*otp_rid64 > *sw_rid64) {
+				printf("update number could not bigger than current SW revision id\n");
+				ret = -1;
+			}
+		} else if (otp_addr == 4) {
+			if (info_cb.pro_sts.pro_key_ret) {
+				printf("OTPCFG4 is protected\n");
+				ret = -1;
+			} else {
+				if ((bit_offset >= 0 && bit_offset <= 7) ||
+				    (bit_offset >= 16 && bit_offset <= 23)) {
+					u32 key_num;
+					u32 retire;
+
+					sec_key_num(&key_num);
+					if (bit_offset >= 16)
+						retire = bit_offset - 16;
+					else
+						retire = bit_offset;
+					if (retire >= key_num) {
+						printf("Retire key id is equal or bigger than current boot key\n");
+						ret = -1;
+					}
+				}
+			}
+		} else if (otp_addr >= 16 && otp_addr <= 31) {
+			if (info_cb.pro_sts.pro_strap) {
+				printf("OTP strap region is protected\n");
+				ret = -1;
+			} else if ((otp_addr < 30 && info_cb.version == OTP_A0) ||
+				   (otp_addr < 28 && info_cb.version != OTP_A0)) {
+				if (otp_addr % 2 == 0)
+					otp_read_conf(30, &otp_strap_pro);
+				else
+					otp_read_conf(31, &otp_strap_pro);
+				if (otp_strap_pro >> bit_offset & 0x1) {
+					printf("OTPCFG%X[%X] is protected\n", otp_addr, bit_offset);
+					ret = -1;
+				}
+			}
+		}
+	} else if (mode == OTP_REGION_STRAP) {
+		// per bit protection will check in otp_strap_bit_confirm
+		if (info_cb.pro_sts.pro_strap) {
+			printf("OTP strap region is protected\n");
+			ret = -1;
+		}
+	}
+
+	if (ret == -1)
+		return OTP_FAILURE;
+
 	return otp_prog_bit(mode, otp_addr, bit_offset, value, nconfirm);
 }
 
@@ -1847,20 +2001,17 @@ static int do_otpprotect(int argc, char *const argv[])
 	int bit_offset;
 	int prog_address;
 	int ret;
+	char force = 0;
 	uint32_t read;
 
 	if (argc == 3) {
 		if (strcmp(argv[1], "o"))
 			return OTP_USAGE;
 		input = strtoul(argv[2], NULL, 16);
+		force = 0;
 	} else if (argc == 2) {
 		input = strtoul(argv[1], NULL, 16);
-		printf("OTPSTRAP[%X] will be protected\n", input);
-		printf("type \"YES\" (no quotes) to continue:\n");
-		if (!confirm_yesno()) {
-			printf(" Aborting\n");
-			return OTP_FAILURE;
-		}
+		force = 1;
 	} else {
 		return OTP_USAGE;
 	}
@@ -1873,6 +2024,20 @@ static int do_otpprotect(int argc, char *const argv[])
 		prog_address = 0xe0e;
 	} else {
 		return OTP_USAGE;
+	}
+
+	if (info_cb.pro_sts.pro_strap) {
+		printf("OTP strap region is protected\n");
+		return OTP_FAILURE;
+	}
+
+	if (!force) {
+		printf("OTPSTRAP[%X] will be protected\n", input);
+		printf("type \"YES\" (no quotes) to continue:\n");
+		if (!confirm_yesno()) {
+			printf(" Aborting\n");
+			return OTP_FAILURE;
+		}
 	}
 
 	otp_read_conf(prog_address, &read);
@@ -1924,6 +2089,11 @@ static int do_otp_scuprotect(int argc, char *const argv[])
 	}
 	if (bit_offset < 0 || bit_offset > 31)
 		return OTP_USAGE;
+	
+	if (info_cb.pro_sts.pro_strap) {
+		printf("OTP strap region is protected\n");
+		return OTP_USAGE;
+	}
 
 	if (!force) {
 		printf("OTPCONF%X[%X] will be programmed\n", conf_offset, bit_offset);
@@ -2003,7 +2173,13 @@ static int do_otprid(int argc, char *const argv[])
 	rid_num = get_rid_num(otp_rid);
 	sw_rid_num = get_rid_num(sw_rid);
 
-	printf("current SW revision ID: 0x%x\n", sw_rid_num);
+	if (sw_rid_num < 0) {
+		printf("SW revision id is invalid, please check.\n");
+		printf("SEC68:0x%x\n", sw_rid[0]);
+		printf("SEC6C:0x%x\n", sw_rid[1]);
+	} else {
+		printf("current SW revision ID: 0x%x\n", sw_rid_num);
+	}
 	if (rid_num >= 0) {
 		printf("current OTP revision ID: 0x%x\n", rid_num);
 		ret = OTP_SUCCESS;
@@ -2041,6 +2217,8 @@ int main(int argc, char *argv[])
 	uint32_t ver;
 	int ret;
 	char ver_name[15];
+	u32 otp_conf0;
+	struct otp_pro_sts *pro_sts;
 
 	if (argc < 2 || argc > 7) {
 		usage();
@@ -2122,6 +2300,17 @@ int main(int argc, char *argv[])
 		printf("SOC is not supported\n");
 		return ret;
 	}
+
+	otp_read_conf(0, &otp_conf0);
+	pro_sts = &info_cb.pro_sts;
+
+	pro_sts->mem_lock = (otp_conf0 >> 31) & 0x1;
+	pro_sts->pro_key_ret = (otp_conf0 >> 29) & 0x1;
+	pro_sts->pro_strap = (otp_conf0 >> 25) & 0x1;
+	pro_sts->pro_conf = (otp_conf0 >> 24) & 0x1;
+	pro_sts->pro_data = (otp_conf0 >> 23) & 0x1;
+	pro_sts->pro_sec = (otp_conf0 >> 22) & 0x1;
+	pro_sts->sec_size = ((otp_conf0 >> 16) & 0x3f) << 5;
 
 	if (!strcmp(sub_cmd, "read"))
 		ret = do_otpread(argc, argv);

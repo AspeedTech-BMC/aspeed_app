@@ -212,6 +212,7 @@ static void buf_print(uint8_t *buf, int len)
 		if ((i + 1) % 16 == 0)
 			printf("\n");
 	}
+	printf("\n");
 }
 
 static int get_dw_bit(uint32_t *rid, int offset)
@@ -1045,42 +1046,50 @@ static int otp_print_strap_info(int view)
 	return OTP_SUCCESS;
 }
 
-static int otp_print_data_image(struct otp_image_layout *image_layout)
+static void _otp_print_key(u32 *data)
 {
+	int i, j;
 	int key_id, key_offset, last, key_type, key_length, exp_length;
-	const struct otpkey_type *key_info_array = info_cb.key_info;
 	struct otpkey_type key_info;
-	uint32_t *buf;
-	uint8_t *byte_buf;
-	char empty = 1;
-	int i = 0, len = 0;
-	int j;
+	const struct otpkey_type *key_info_array = info_cb.key_info;
+	int len = 0;
+	u8 *byte_buf;
+	int empty;
 
-	byte_buf = image_layout->data;
-	buf = (uint32_t *)byte_buf;
+	byte_buf = (u8 *)data;
+
+	empty = 1;
+	for (i = 0; i < 16; i++) {
+		if (i % 2) {
+			if (data[i] != 0xffffffff)
+				empty = 0;
+		} else {
+			if (data[i] != 0)
+				empty = 0;
+		}
+	}
+	if (empty) {
+		printf("OTP data header is empty\n");
+		return;
+	}
 
 	for (i = 0; i < 16; i++) {
-		if (buf[i] != 0)
-			empty = 0;
-	}
-	if (empty)
-		return OTP_SUCCESS;
+		key_id = data[i] & 0x7;
+		key_offset = data[i] & 0x1ff8;
+		last = (data[i] >> 13) & 1;
+		key_type = (data[i] >> 14) & 0xf;
+		key_length = (data[i] >> 18) & 0x3;
+		exp_length = (data[i] >> 20) & 0xfff;
 
-	i = 0;
-	while (1) {
-		key_id = buf[i] & 0x7;
-		key_offset = buf[i] & 0x1ff8;
-		last = (buf[i] >> 13) & 1;
-		key_type = (buf[i] >> 14) & 0xf;
-		key_length = (buf[i] >> 18) & 0x3;
-		exp_length = (buf[i] >> 20) & 0xfff;
-
+		key_info.value = -1;
 		for (j = 0; j < info_cb.key_info_len; j++) {
 			if (key_type == key_info_array[j].value) {
 				key_info = key_info_array[j];
 				break;
 			}
 		}
+		if (key_info.value == -1)
+			break;
 
 		printf("\nKey[%d]:\n", i);
 		printf("Key Type: ");
@@ -1159,13 +1168,32 @@ static int otp_print_data_image(struct otp_image_layout *image_layout)
 			printf("RSA mod:\n");
 			buf_print(&byte_buf[key_offset], len / 2);
 			printf("RSA exp:\n");
-			buf_print((uint8_t *)"\x01\x00\x01", 3);
+			buf_print((u8 *)"\x01\x00\x01", 3);
 		}
 		if (last)
 			break;
-		i++;
 	}
+}
+
+static int otp_print_data_image(struct otp_image_layout *image_layout)
+{
+	u32 *buf;
+
+	buf = (u32 *)image_layout->data;
+	_otp_print_key(buf);
+
 	return OTP_SUCCESS;
+}
+
+static void otp_print_key_info(void)
+{
+	u32 data[2048];
+	int i;
+
+	for (i = 0; i < 2048 ; i += 2)
+		otp_read_data(i, &data[i]);
+
+	_otp_print_key(data);
 }
 
 static int otp_strap_image_confirm(struct otp_image_layout *image_layout)

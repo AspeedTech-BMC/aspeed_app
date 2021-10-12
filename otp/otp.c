@@ -1953,6 +1953,67 @@ static int otp_update_rid(uint32_t update_num, int force)
 	return ret;
 }
 
+static int otp_retire_key(u32 retire_id, int force)
+{
+	u32 otpcfg4;
+	u32 krb;
+	u32 krb_b;
+	u32 krb_or;
+	u32 current_id;
+
+	otp_read_conf(4, &otpcfg4);
+	sec_key_num(&current_id);
+	krb = otpcfg4 & 0xff;
+	krb_b = (otpcfg4 >> 16) & 0xff;
+	krb_or = krb | krb_b;
+
+	printf("current Key ID: 0x%x\n", current_id);
+	printf("input retire ID: 0x%x\n", retire_id);
+	printf("OTPCFG0x4 = 0x%X\n", otpcfg4);
+
+	if (info_cb.pro_sts.pro_key_ret) {
+		printf("OTPCFG0x4 is protected\n");
+		return OTP_FAILURE;
+	}
+
+	if (retire_id >= current_id) {
+		printf("Retire key id is equal or bigger than current boot key\n");
+		return OTP_FAILURE;
+	}
+
+	if (krb_or & (1 << retire_id)) {
+		printf("Key 0x%X already retired\n", retire_id);
+		return OTP_SUCCESS;
+	}
+
+	printf("OTPCFG0x4[0x%X] will be programmed\n", retire_id);
+	if (force == 0) {
+		printf("type \"YES\" (no quotes) to continue:\n");
+		if (!confirm_yesno()) {
+			printf(" Aborting\n");
+			return OTP_FAILURE;
+		}
+	}
+
+	if (otp_prog_conf_b(4, retire_id, 1) == OTP_FAILURE) {
+		printf("OTPCFG0x4[0x%X] programming failed\n", retire_id);
+		printf("try to program backup OTPCFG0x4[0x%X]\n", retire_id + 16);
+		if (otp_prog_conf_b(4, retire_id + 16, 1) == OTP_FAILURE)
+			printf("OTPCFG0x4[0x%X] programming failed", retire_id + 16);
+	}
+
+	otp_read_conf(4, &otpcfg4);
+	krb = otpcfg4 & 0xff;
+	krb_b = (otpcfg4 >> 16) & 0xff;
+	krb_or = krb | krb_b;
+	if (krb_or & (1 << retire_id)) {
+		printf("SUCCESS\n");
+		return OTP_SUCCESS;
+	}
+	printf("FAILED\n");
+	return OTP_FAILURE;
+}
+
 static int do_otpread(int argc, char *const argv[])
 {
 	uint32_t offset, count;
@@ -2426,6 +2487,32 @@ static int do_otprid(int argc, char *const argv[])
 	return ret;
 }
 
+static int do_otpretire(int argc, char *const argv[])
+{
+	u32 retire_id;
+	int force = 0;
+	int ret;
+
+	if (argc == 3) {
+		if (strcmp(argv[1], "o"))
+			return OTP_USAGE;
+		force = 1;
+		retire_id = strtoul(argv[2], NULL, 16);
+	} else if (argc == 2) {
+		retire_id = strtoul(argv[1], NULL, 16);
+	} else {
+		return OTP_USAGE;
+	}
+
+	if (retire_id > 7)
+		return OTP_USAGE;
+	ret = otp_retire_key(retire_id, force);
+
+	if (ret)
+		return OTP_USAGE;
+	return OTP_SUCCESS;
+}
+
 static void usage(void)
 {
 	printf("otp version\n"
@@ -2440,7 +2527,8 @@ static void usage(void)
 	       "otp protect [o] <bit_offset>\n"
 	       "otp scuprotect [o] <bit_offset>\n"
 	       "otp update [o] <revision_id>\n"
-	       "otp rid\n");
+	       "otp rid\n"
+	       "otp retire [o] <key_id>\n");
 }
 
 int main(int argc, char *argv[])
@@ -2560,6 +2648,8 @@ int main(int argc, char *argv[])
 		ret = do_otpupdate(argc, argv);
 	else if (!strcmp(sub_cmd, "rid"))
 		ret = do_otprid(argc, argv);
+	else if (!strcmp(sub_cmd, "retire"))
+		ret = do_otpretire(argc, argv);
 	else
 		ret = OTP_USAGE;
 

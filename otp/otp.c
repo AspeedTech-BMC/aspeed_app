@@ -780,7 +780,7 @@ static int otp_print_conf_image(struct otp_image_layout *image_layout)
 		} else if (conf_info[i].value == OTP_REG_VALID_BIT) {
 			if (otp_value != 0) {
 				for (j = 0; j < 7; j++) {
-					if (otp_value == (1 << j))
+					if (otp_value & (1 << j))
 						valid_bit[j * 2] = '1';
 					else
 						valid_bit[j * 2] = '0';

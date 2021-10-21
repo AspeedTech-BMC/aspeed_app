@@ -52,7 +52,7 @@ static void print_usage(FILE *fp, int argc, char **argv)
 
 void save2file(char *data, size_t size, char *fileName)
 {
-	int fd = open(fileName, O_CREAT | O_WRONLY);
+	int fd = open(fileName, O_CREAT | O_WRONLY, 0644);
 
 	if (fd < 0) {
 		printf("%s file open failed\n", fileName);

@@ -53,25 +53,25 @@ extern int connfd;
 extern unsigned long *buffer;
 extern int net_setup(void);
 
-void VideoCapture (PVIDEO_ENGINE_INFO VideoEngineInfo)
+static void VideoCapture(PVIDEO_ENGINE_INFO VideoEngineInfo)
 {
-	int Status;
 	u32 data;
 	TRANSFER_HEADER Transfer_Header;
-	u32    DifferentialSetting = 0;
-	u32    OldBufferAddress, NewBufferAddress;
 	u32 send_len;
 	struct ast_mode_detection mode_detection;
 	struct ast_scaling set_scaling;
 	struct ast_video_config video_config;
+#ifdef CRT
 	struct fb_var_screeninfo vinfo;
+#endif
 
-	int vga_enable;
 	u8 jpeg_encode = 0;
 	char encrypt_key_cmd[512];
 	struct ast_auto_mode auto_mode;
+#ifdef NON_AUTO
 	struct ast_capture_mode capture_mode;
 	struct ast_compression_mode compression_mode;
+#endif
 
 	set_scaling.enable = VideoEngineInfo->INFData.DownScalingEnable;
 	set_scaling.x = VideoEngineInfo->DestinationModeInfo.X;
@@ -347,6 +347,8 @@ init:
 		}
 
 #if 0
+		int vga_enable;
+
 		if (socketbuffer[23] == 1) {	
 			vga_enable = 0;
 			ast_video_set_vga_display(&vga_enable);
@@ -476,8 +478,6 @@ static int GetINFData(PVIDEO_ENGINE_INFO VideoEngineInfo)
 
 int main_v1()
 {
-	int flags;
-	
 	VIDEO_ENGINE_INFO   VideoEngineInfo;
 
 	memset(&VideoEngineInfo, 0, sizeof(VideoEngineInfo));

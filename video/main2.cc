@@ -24,7 +24,7 @@ static const struct option opt_long [] = {
 	{ 0, 0, 0, 0 }
 };
 
-size_t width, height;
+static size_t width, height;
 
 extern int connfd;
 extern unsigned long *buffer;
@@ -50,7 +50,7 @@ static void print_usage(FILE *fp, int argc, char **argv)
 		);
 }
 
-void save2file(char *data, size_t size, char *fileName)
+static void save2file(char *data, size_t size, char *fileName)
 {
 	int fd = open(fileName, O_CREAT | O_WRONLY, 0644);
 
@@ -66,7 +66,7 @@ void save2file(char *data, size_t size, char *fileName)
 	close(fd);
 }
 
-void transfer(ikvm::Video &v)
+static void transfer(ikvm::Video &v)
 {
        	unsigned char *socketbuffer = (unsigned char *)malloc (1024);
 	uint32_t count;

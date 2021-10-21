@@ -282,17 +282,19 @@ int main(int argc, char **argv) {
 
 		while(1) {
 			video.start();
-			video.getFrame();
-			if (video.getFrameNumber() != frameNumber + 1)
-				printf("%s: discontinuous frame number (%d -> %d)\n",
-				       __func__,  frameNumber, video.getFrameNumber());
-			frameNumber = video.getFrameNumber();
+			if (video.getFrame() == 0) {
+				if ((video.getFrameNumber() != frameNumber + 1) && video.getFrameNumber())
+					printf("%s: discontinuous frame number (%d -> %d)\n",
+					       __func__,  frameNumber, video.getFrameNumber());
 
-			transfer(video);
+				frameNumber = video.getFrameNumber();
+				transfer(video);
+			}
 
 			if (video.needsResize())
 			{
 				video.resize();
+				frameNumber = 0;
 			}
 		}
 		video.stop();

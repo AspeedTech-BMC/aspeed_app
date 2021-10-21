@@ -36,7 +36,7 @@ class Video
      */
     char* getData();
     /* @brief Performs read to grab latest video frame */
-    void getFrame();
+    int getFrame();
     /*
      * @brief Gets whether or not the video frame needs to be resized
      *

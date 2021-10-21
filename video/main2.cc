@@ -7,42 +7,9 @@
 #include <unistd.h>
 
 #include <netdb.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <linux/socket.h>
 
 #include "ikvm_video.hpp"
-
-#define PORT 1234
-
-#define    BYTE                     unsigned char
-#define    ULONG                    unsigned long
-#define    USHORT                   unsigned short
-#define    UCHAR                    unsigned char
-
-typedef struct _TRANSFER_HEADER {
-	ULONG     Data_Length;
-	ULONG     Blocks_Changed;
-	USHORT    User_Width;
-	USHORT    User_Height;
-	BYTE	  Frist_frame;		// 1: first frame 
-	BYTE	  Compress_type;	//0:aspeed mode, 1:jpeg mode
-	BYTE	  Trigger_mode;	//0:capture, 1: compression, 2: buffer
-	BYTE	  Data_format;	//0:DCT, 1:DCTwVQ2 color, 2:DCTwVQ4 color
-	BYTE      RC4_Enable;
-	BYTE      RC4_Reset;	//no use
-	BYTE      Y_Table;
-	BYTE      UV_Table;
-	BYTE      Mode_420;
-	BYTE      Direct_Mode;
-	BYTE      VQ_Mode;
-	BYTE      Disable_VGA;
-	BYTE      Differential_Enable;
-	BYTE      Auto_Mode;
-	BYTE      VGA_Status;
-	BYTE      RC4State;
-	BYTE      Advance_Table;
-} TRANSFER_HEADER, *PTRANSFER_HEADER;
+#include "regs-video.h"
 
 static const char opt_short [] = "c:shq:p:a:m:f:";
 static const struct option opt_long [] = {
@@ -57,9 +24,11 @@ static const struct option opt_long [] = {
 	{ 0, 0, 0, 0 }
 };
 
-int connfd;
-unsigned long *buffer, Frame = 0;
 size_t width, height;
+
+extern int connfd;
+extern unsigned long *buffer;
+extern int net_setup(void);
 
 static void print_usage(FILE *fp, int argc, char **argv)
 {
@@ -79,54 +48,6 @@ static void print_usage(FILE *fp, int argc, char **argv)
 		"\n",
 		argv[0]
 		);
-}
-
-int net_setup(void)
-{
-	struct sockaddr_in addr_svr;
-	struct sockaddr_in addr_cln;
-	socklen_t sLen = sizeof(addr_cln);
-
-	int sockfd;
-	int sndbuf = 0x100000;
-
-	buffer = (unsigned long *)malloc (1024);
-
-	bzero(&addr_svr, sizeof(addr_svr));
-	addr_svr.sin_family= AF_INET;
-	addr_svr.sin_port= htons(PORT);
-	addr_svr.sin_addr.s_addr = INADDR_ANY;
-
-	sockfd = socket(AF_INET, SOCK_STREAM, 0);
-	if( sockfd == -1){
-		perror("call socket \n");
-		return -1;
-	}
-
-	setsockopt(sockfd, SOL_SOCKET, SO_SNDBUF, &sndbuf, 0x100000);
-
-	//bind
-	if (bind(sockfd, (struct sockaddr *)&addr_svr, sizeof(addr_svr)) == -1) {
-		perror("call bind \n");
-		return -1;
-	}
-
-	//listen
-	if (listen(sockfd, 10) == -1) {
-		perror("call listen \n");
-		return -1;
-	}
-
-	printf("Accepting connections ...\n");
-
-	connfd = accept(sockfd, (struct sockaddr *)&addr_cln, &sLen);
-	if (connfd == -1) {
-		perror("call accept\n");
-		return -1;
-	}
-
-	printf("Client connect ...\n");
-	return 0;
 }
 
 void save2file(char *data, size_t size, char *fileName)
@@ -212,7 +133,7 @@ static const char * const compress_mode_str[] = {"DCT Only",
 static const char * const format_str[] = {"Standard JPEG",
 	"Aspeed JPEG", "Partial JPEG"};
 
-int main(int argc, char **argv) {
+int main_v2(int argc, char **argv) {
 
 	char opt;
 	uint32_t times = 0, quality = 0, fps = 0;

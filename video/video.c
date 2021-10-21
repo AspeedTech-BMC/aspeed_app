@@ -13,7 +13,6 @@
 
 int video_fd; 
 void *video_stream_addr;
-void *video_jpeg_addr;
 
 int ast_video_open(void)
 {
@@ -61,6 +60,8 @@ void *ast_video_mmap_stream_addr(void)
 void *ast_video_mmap_jpeg_addr(void)
 {
 	unsigned long video_jpeg_offset; 
+	void *video_jpeg_addr;
+
 	if (ioctl(video_fd, AST_VIDEO_GET_JPEG_OFFSET_IOCRX, &video_jpeg_offset) < 0) {
 		printf("AST_VIDEO_GET_JPEG_OFFSET_IOCRX fail\n");
 		return NULL;

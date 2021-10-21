@@ -5,25 +5,12 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <netdb.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <sys/socket.h>
 #include <fcntl.h>
 #include <sys/ioctl.h>
 #include <string.h>
-#include <linux/socket.h>
 #include <time.h>
-
-#include <fcntl.h>
-#include <signal.h>
-#include<stdio.h>  
-#include<unistd.h>  
-#include<sys/mman.h>  
-#include<sys/types.h>  
-#include<sys/stat.h>  
-#include<fcntl.h>  
 
 #include "regs-video.h"
 
@@ -39,14 +26,12 @@
 	#define VIDEO_DBG(fmt, args...)
 #endif
 
+#define JPEG_PERIOD 100
+
 
 //Transfer to client RC4 Reset State
-int connfd;
 //char buffer[1024];
 unsigned char *socketbuffer;
-unsigned long *buffer, Frame = 0;
-
-extern int video_fd; 
 
 unsigned long Video_Status = 0;		//VGA mode change 
 
@@ -59,7 +44,14 @@ unsigned char firstframe = 0;
 
 int fbfd = 0;
 
-#define JPEG_PERIOD 100
+//  RC4 keys. Current keys are fedcba98765432210
+unsigned char EncodeKeys[256];
+
+
+extern int video_fd;
+extern int connfd;
+extern unsigned long *buffer;
+extern int net_setup(void);
 
 void VideoCapture (PVIDEO_ENGINE_INFO VideoEngineInfo)
 {
@@ -372,7 +364,7 @@ init:
 
 static int GetINFData(PVIDEO_ENGINE_INFO VideoEngineInfo)
 {
-	u8	string[81], name[80], StringToken[256];
+	char	string[81], name[80], StringToken[256];
 	u32	i;
 	FILE	*fp;
 
@@ -478,24 +470,15 @@ static int GetINFData(PVIDEO_ENGINE_INFO VideoEngineInfo)
 	return 0;
 }
 
-static struct ast_video_data {
-};
 
-
-#define PORT 1234
 #define VIDEO_MEM_SIZE                          0x2800000		/* 40 MB */
 #define VIDEO_JPEG_OFFSET                       0x2300000
 
-int main()
+int main_v1()
 {
-	struct sockaddr_in addr_svr;
-	struct sockaddr_in addr_cln;
-	socklen_t sLen = sizeof(addr_cln);
 	int flags;
 	
 	VIDEO_ENGINE_INFO   VideoEngineInfo;
-	int sockfd;
-	int sndbuf = 0x100000;
 
 	memset(&VideoEngineInfo, 0, sizeof(VideoEngineInfo));
 
@@ -508,48 +491,15 @@ int main()
 	printf("The framebuffer device was opened successfully.\n");
 #endif
 
-	socketbuffer = malloc ((size_t) 1024);
-	buffer = malloc ((size_t) 1024);
+	socketbuffer = (unsigned char*)malloc ((size_t) 1024);
 
-	bzero(&addr_svr, sizeof(addr_svr)); 
-	addr_svr.sin_family= AF_INET;
-	addr_svr.sin_port= htons(PORT);
-	addr_svr.sin_addr.s_addr = INADDR_ANY;
-
-	sockfd = socket(AF_INET, SOCK_STREAM, 0);
-	if( sockfd == -1){
-		perror("call socket \n");
-		exit(1);
-	}
-
-	setsockopt(sockfd, SOL_SOCKET, SO_SNDBUF, &sndbuf, 0x100000);
-
-	//bind 
-	if (bind(sockfd, (struct sockaddr *)&addr_svr, sizeof(addr_svr)) == -1) {
-		perror("call bind \n");
-		exit(1);
-	}
-
-	//listen
-	if (listen(sockfd, 10) == -1) {
-		perror("call listen \n");
-	}
-
-	printf("Accepting connections ...\n");
-
-	connfd = accept(sockfd, (struct sockaddr *)&addr_cln, &sLen);
-	if (connfd == -1) {
-		perror("call accept\n");
-		exit(1);
-	}
-
-	printf("Client connect ...\n");
+	net_setup();
 
 	if(ast_video_open() < 0)
 		exit(1);
 
 	stream_virt_addr = ast_video_mmap_stream_addr();
-	jpeg_virt_addr = ast_video_mmap_jpeg_addr();
+	jpeg_virt_addr = (unsigned char*)ast_video_mmap_jpeg_addr();
 
 	if(GetINFData(&VideoEngineInfo)) {
 		ast_video_close();

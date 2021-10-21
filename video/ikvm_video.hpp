@@ -175,13 +175,6 @@ class Video
         aspeed_hq_mode = mode;
     }
 
-    /* @brief Number of bits per component of a pixel */
-    static const int bitsPerSample;
-    /* @brief Number of bytes of storage for a pixel */
-    static const int bytesPerPixel;
-    /* @brief Number of components in a pixel (i.e. 3 for RGB pixel) */
-    static const int samplesPerPixel;
-
   private:
     /*
      * @brief find v4l2 ctrl-id by the given name

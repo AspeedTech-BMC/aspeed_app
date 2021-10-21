@@ -20,11 +20,6 @@
 namespace ikvm
 {
 
-const int Video::bitsPerSample(8);
-const int Video::bytesPerPixel(4);
-const int Video::samplesPerPixel(3);
-
-
 Video::Video(const std::string& p, int fr, int q, int sub, int fmt) :
     resizeAfterOpen(false), timingsError(false), fd(-1), frameRate(fr),
     lastFrameIndex(-1), height(600), width(800),

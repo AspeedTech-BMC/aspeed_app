@@ -5,6 +5,7 @@ endif
 endif
 
 CFLAGS	+= -Wall -O3
+CXXFLAGS+= -Wall -O3
 OBJS	= main.o main1.o main2.o video.o ikvm_video.o
 EXE	= ast-video
 

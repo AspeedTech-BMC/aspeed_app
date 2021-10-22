@@ -31,17 +31,17 @@ Video::Video(const std::string& p, int fr, int q, int sub, int fmt) :
     fd = open(path.c_str(), O_RDWR);
     if (fd < 0)
     {
-        printf("Failed to open video device PATH=%s ERROR=%s\n",
+        pr_dbg("Failed to open video device PATH=%s ERROR=%s\n",
                path.c_str(), strerror(errno));
     }
 
     qctrl.id = V4L2_CTRL_FLAG_NEXT_CTRL;
     while (ioctl(fd, VIDIOC_QUERYCTRL, &qctrl) == 0) {
         if (qctrl.type == V4L2_CTRL_TYPE_CTRL_CLASS) {
-            printf("[%-30s]\n", qctrl.name);
+            pr_dbg("[%-30s]\n", qctrl.name);
         } else {
             ctrl_str2q[std::string((char *)qctrl.name)] = qctrl;
-            printf("%-30s : type=%d, minimum=%d, maximum=%d, step=%d, default_value=%d\n",
+            pr_dbg("%-30s : type=%d, minimum=%d, maximum=%d, step=%d, default_value=%d\n",
                    qctrl.name, qctrl.type, qctrl.minimum, qctrl.maximum,
                    qctrl.step, qctrl.default_value);
         }
@@ -84,6 +84,7 @@ int Video::getFrame()
     v4l2_buffer buf;
     fd_set fds;
     timeval tv;
+    bool valid_frame(false);
 
     if (fd < 0)
     {
@@ -121,6 +122,7 @@ int Video::getFrame()
                     lastFrameIndex = buf.index;
                     buffers[lastFrameIndex].payload = buf.bytesused;
                     buffers[buf.index].sequence = buf.sequence;
+                    valid_frame = true;
                     break;
                 }
                 else
@@ -129,13 +131,8 @@ int Video::getFrame()
                 }
             }
         } while (rc >= 0);
-
-        if ((buf.flags & V4L2_BUF_FLAG_ERROR)) {
-            printf("No suitable buf for dequeue\n");
-            return -1;
-        }
     } else {
-        printf("select failed ERROR=%s\n", strerror(errno));
+        pr_dbg("select failed ERROR=%s\n", strerror(errno));
         return -1;
     }
 
@@ -158,7 +155,7 @@ int Video::getFrame()
             rc = ioctl(fd, VIDIOC_QBUF, &buf);
             if (rc)
             {
-                printf("Failed to queue buffer ERROR=%s\n", strerror(errno));
+                pr_dbg("Failed to queue buffer ERROR=%s\n", strerror(errno));
             }
             else
             {
@@ -167,7 +164,7 @@ int Video::getFrame()
         }
     }
 
-    return 0;
+    return valid_frame ? 0 : -1;
 }
 
 bool Video::needsResize()
@@ -186,40 +183,38 @@ bool Video::needsResize()
     }
 
     memset(&timings, 0, sizeof(v4l2_dv_timings));
-    // try more few times if no-signal
+    // try more times if failed
     do {
         rc = ioctl(fd, VIDIOC_QUERY_DV_TIMINGS, &timings);
-        if ((rc < 0) && (errno == ENOLINK)) {
-            sleep(1);
+        if (rc < 0) {
+            usleep(200 * 1000);
         } else
             break;
-    } while (count++ < 3);
+    } while (count++ < 10);
 
     if (rc < 0)
     {
         if (!timingsError)
         {
-            printf("Failed to query timings ERROR=%s\n", strerror(errno));
+            pr_dbg("Failed to query timings ERROR=%s\n", strerror(errno));
             timingsError = true;
         }
 
         restart();
         return false;
     }
-    else
-    {
-        timingsError = false;
-    }
+
+    timingsError = false;
 
     if (timings.bt.width != width || timings.bt.height != height)
     {
-        printf("timing old(%dx%d) new(%dx%d)\n", width, height, timings.bt.width, timings.bt.height);
+        pr_dbg("timing old(%dx%d) new(%dx%d)\n", width, height, timings.bt.width, timings.bt.height);
         width = timings.bt.width;
         height = timings.bt.height;
 
         if (!width || !height)
         {
-            printf("Failed to get new resolution WIDTH=%d, HEIGHT=%d\n", width, height);
+            pr_dbg("Failed to get new resolution WIDTH=%d, HEIGHT=%d\n", width, height);
         }
 
         lastFrameIndex = -1;
@@ -229,7 +224,7 @@ bool Video::needsResize()
     return false;
 }
 
-void Video::resize()
+int Video::resize()
 {
     int rc;
     unsigned int i;
@@ -239,13 +234,13 @@ void Video::resize()
 
     if (fd < 0)
     {
-        return;
+        return -1;
     }
 
     if (resizeAfterOpen)
     {
         resizeAfterOpen = false;
-        return;
+        return 0;
     }
 
     for (i = 0; i < buffers.size(); ++i)
@@ -262,7 +257,7 @@ void Video::resize()
         rc = ioctl(fd, VIDIOC_STREAMOFF, &type);
         if (rc)
         {
-            printf("Failed to stop streaming ERROR=%s\n", strerror(errno));
+            pr_dbg("Failed to stop streaming ERROR=%s\n", strerror(errno));
         }
     }
 
@@ -287,20 +282,22 @@ void Video::resize()
         rc = ioctl(fd, VIDIOC_REQBUFS, &req);
         if (rc < 0)
         {
-            printf("Failed to zero streaming buffers ERROR=%s\n", strerror(errno));
+            pr_dbg("Failed to zero streaming buffers ERROR=%s\n", strerror(errno));
         }
 
         memset(&timings, 0, sizeof(v4l2_dv_timings));
         rc = ioctl(fd, VIDIOC_QUERY_DV_TIMINGS, &timings);
         if (rc < 0)
         {
-            printf("Failed to query timings ERROR=%s\n", strerror(errno));
+            pr_dbg("Failed to query timings ERROR=%s\n", strerror(errno));
+            return -1;
         }
 
         rc = ioctl(fd, VIDIOC_S_DV_TIMINGS, &timings);
         if (rc < 0)
         {
-            printf("Failed to set timings ERROR=%s\n", strerror(errno));
+            pr_dbg("Failed to set timings ERROR=%s\n", strerror(errno));
+            return -1;
         }
 
         buffers.clear();
@@ -313,7 +310,8 @@ void Video::resize()
     rc = ioctl(fd, VIDIOC_REQBUFS, &req);
     if (rc < 0 || req.count < 2)
     {
-        printf("Failed to request streaming buffers ERROR=%s\n", strerror(errno));
+        pr_dbg("Failed to request streaming buffers ERROR=%s\n", strerror(errno));
+        return -1;
     }
 
     buffers.resize(req.count);
@@ -330,14 +328,15 @@ void Video::resize()
         rc = ioctl(fd, VIDIOC_QUERYBUF, &buf);
         if (rc < 0)
         {
-            printf("Failed to query buffer ERROR=%s\n", strerror(errno));
+            pr_dbg("Failed to query buffer ERROR=%s\n", strerror(errno));
         }
 
         buffers[i].data = mmap(NULL, buf.length, PROT_READ | PROT_WRITE,
                                MAP_SHARED, fd, buf.m.offset);
         if (buffers[i].data == MAP_FAILED)
         {
-            printf("Failed to mmap buffer ERROR=%s\n", strerror(errno));
+            pr_dbg("Failed to mmap buffer ERROR=%s\n", strerror(errno));
+            return -1;
         }
 
         buffers[i].size = buf.length;
@@ -345,7 +344,8 @@ void Video::resize()
         rc = ioctl(fd, VIDIOC_QBUF, &buf);
         if (rc < 0)
         {
-            printf("Failed to queue buffer ERROR=%s\n", strerror(errno));
+            pr_dbg("Failed to queue buffer ERROR=%s\n", strerror(errno));
+            return -1;
         }
 
         buffers[i].queued = true;
@@ -354,11 +354,12 @@ void Video::resize()
     rc = ioctl(fd, VIDIOC_STREAMON, &type);
     if (rc)
     {
-        printf("Failed to start streaming ERROR=%s\n", strerror(errno));
+        pr_dbg("Failed to start streaming ERROR=%s\n", strerror(errno));
     }
+    return rc;
 }
 
-void Video::start()
+int Video::start()
 {
     int rc;
     size_t oldHeight = height;
@@ -370,27 +371,29 @@ void Video::start()
 
     if (fd >= 0)
     {
-        return;
+        return 0;
     }
 
     fd = open(path.c_str(), O_RDWR);
     if (fd < 0)
     {
-        printf("Failed to open video device PATH=%s ERROR=%s\n",
+        pr_dbg("Failed to open video device PATH=%s ERROR=%s\n",
                path.c_str(), strerror(errno));
+        return -1;
     }
 
     memset(&cap, 0, sizeof(v4l2_capability));
     rc = ioctl(fd, VIDIOC_QUERYCAP, &cap);
     if (rc < 0)
     {
-        printf("Failed to query video device capabilities ERROR=%s\n", strerror(errno));
+        pr_dbg("Failed to query video device capabilities ERROR=%s\n", strerror(errno));
     }
 
     if (!(cap.capabilities & V4L2_CAP_VIDEO_CAPTURE) ||
         !(cap.capabilities & V4L2_CAP_STREAMING))
     {
-        printf("Video device doesn't support this application\n");
+        pr_dbg("Video device doesn't support this application\n");
+        return -1;
     }
 
     memset(&fmt, 0, sizeof(v4l2_format));
@@ -398,7 +401,7 @@ void Video::start()
     rc = ioctl(fd, VIDIOC_G_FMT, &fmt);
     if (rc < 0)
     {
-        printf("Failed to query video device format ERROR=%s\n", strerror(errno));
+        pr_dbg("Failed to query video device format ERROR=%s\n", strerror(errno));
     }
 
     memset(&sparm, 0, sizeof(v4l2_streamparm));
@@ -408,7 +411,7 @@ void Video::start()
     rc = ioctl(fd, VIDIOC_S_PARM, &sparm);
     if (rc < 0)
     {
-        printf("Failed to set video device frame rate ERROR=%s\n", strerror(errno));
+        pr_dbg("Failed to set video device frame rate ERROR=%s\n", strerror(errno));
     }
 
     ctrl.id = V4L2_CID_JPEG_COMPRESSION_QUALITY;
@@ -416,7 +419,7 @@ void Video::start()
     rc = ioctl(fd, VIDIOC_S_CTRL, &ctrl);
     if (rc < 0)
     {
-        printf("Failed to set video jpeg quality ERROR=%s\n", strerror(errno));
+        pr_dbg("Failed to set video jpeg quality ERROR=%s\n", strerror(errno));
     }
 
     ctrl.id = V4L2_CID_JPEG_CHROMA_SUBSAMPLING;
@@ -425,7 +428,7 @@ void Video::start()
     rc = ioctl(fd, VIDIOC_S_CTRL, &ctrl);
     if (rc < 0)
     {
-        printf("Failed to set video jpeg subsampling ERROR=%s\n", strerror(errno));
+        pr_dbg("Failed to set video jpeg subsampling ERROR=%s\n", strerror(errno));
     }
 
     if ((ctrl.id = common_find_ctrl_id("Aspeed JPEG Format")) != 0) {
@@ -433,7 +436,7 @@ void Video::start()
         rc = ioctl(fd, VIDIOC_S_CTRL, &ctrl);
         if (rc < 0)
         {
-            printf("Failed to set video jpeg aspeed format ERROR=%s\n", strerror(errno));
+            pr_dbg("Failed to set video jpeg aspeed format ERROR=%s\n", strerror(errno));
         }
     }
 
@@ -442,22 +445,23 @@ void Video::start()
         rc = ioctl(fd, VIDIOC_S_CTRL, &ctrl);
         if (rc < 0)
         {
-            printf("Failed to set video jpeg aspeed HQ mode ERROR=%s\n", strerror(errno));
+            pr_dbg("Failed to set video jpeg aspeed HQ mode ERROR=%s\n", strerror(errno));
         }
     }
 
     height = fmt.fmt.pix.height;
     width = fmt.fmt.pix.width;
 
-    resize();
+    rc = resize();
 
     if (oldHeight != height || oldWidth != width)
     {
         resizeAfterOpen = true;
     }
+    return rc;
 }
 
-void Video::stop()
+int Video::stop()
 {
     int rc;
     unsigned int i;
@@ -465,7 +469,7 @@ void Video::stop()
 
     if (fd < 0)
     {
-        return;
+        return -1;
     }
 
     lastFrameIndex = -1;
@@ -473,7 +477,8 @@ void Video::stop()
     rc = ioctl(fd, VIDIOC_STREAMOFF, &type);
     if (rc)
     {
-        printf("Failed to stop streaming ERROR=%s\n", strerror(errno));
+        pr_dbg("Failed to stop streaming ERROR=%s\n", strerror(errno));
+        return -1;
     }
 
     for (i = 0; i < buffers.size(); ++i)
@@ -488,6 +493,7 @@ void Video::stop()
 
     close(fd);
     fd = -1;
+    return 0;
 }
 
 } // namespace ikvm

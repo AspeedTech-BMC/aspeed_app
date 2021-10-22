@@ -72,6 +72,10 @@ static void transfer(ikvm::Video &v, unsigned char *socketbuffer)
 	uint32_t send_len;
 	TRANSFER_HEADER Transfer_Header;
 	bool firstframe;
+	char* data = v.getData();
+
+	if (data == nullptr)
+		return;
 
 	if (width == v.getWidth() && height == v.getHeight()) {
 		firstframe = false;
@@ -114,11 +118,11 @@ static void transfer(ikvm::Video &v, unsigned char *socketbuffer)
 	//send frame
 	if(Transfer_Header.Compress_type) {
 		do {
-			send_len = send(connfd, (unsigned char *)v.getData(), Transfer_Header.Data_Length, MSG_WAITALL);
+			send_len = send(connfd, (unsigned char *)data, Transfer_Header.Data_Length, MSG_WAITALL);
 		} while (send_len != Transfer_Header.Data_Length);
 	} else {
 		do {
-			send_len = send(connfd, (unsigned char *)v.getData(), Transfer_Header.Data_Length * 4, MSG_WAITALL);
+			send_len = send(connfd, (unsigned char *)data, Transfer_Header.Data_Length * 4, MSG_WAITALL);
 		} while (send_len != Transfer_Header.Data_Length * 4);
 	}
 
@@ -202,8 +206,8 @@ int main_v2(int argc, char **argv) {
 			return -1;
 
 		socketbuffer = (unsigned char*)malloc ((size_t) 1024);
+		video.start();
 		while(1) {
-			video.start();
 			if (video.getFrame() == 0) {
 				if ((video.getFrameNumber() != frameNumber + 1) && video.getFrameNumber())
 					printf("%s: discontinuous frame number (%d -> %d)\n",
@@ -225,10 +229,10 @@ int main_v2(int argc, char **argv) {
 	} else {
 		uint8_t count = 0;
 
+		video.start();
 		while (times--) {
 			sprintf(fileName, "capture%d.jpg", ++count);
 
-			video.start();
 			video.getFrame();
 			if ((data = video.getData()) != nullptr) {
 				save2file(data, video.getFrameSize(), fileName);

@@ -6,6 +6,8 @@
 #include <map>
 #include <linux/videodev2.h>
 
+#define pr_dbg(fmt, args...) printf("%s(): " fmt, __func__, ## args)
+
 namespace ikvm
 {
 
@@ -44,16 +46,16 @@ class Video
      */
     bool needsResize();
     /* @brief Performs the resize and re-allocates framebuffer */
-    void resize();
+    int resize();
     /* @brief Starts streaming from the video device */
-    void start();
+    int start();
     /* @brief Stops streaming from the video device */
-    void stop();
+    int stop();
     /* @brief Restarts streaming from the video device */
-    void restart()
+    int restart()
     {
         stop();
-        start();
+        return start();
     }
 
     /*

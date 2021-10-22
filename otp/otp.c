@@ -19,7 +19,7 @@
 #include "otp_info.h"
 #include "sha256.h"
 
-#define OTP_VER				"1.1.0"
+#define OTP_VER				"1.2.0"
 
 #define BIT(nr)					(1UL << (nr))
 #define OTP_REGION_STRAP		BIT(0)

@@ -66,9 +66,8 @@ static void save2file(char *data, size_t size, char *fileName)
 	close(fd);
 }
 
-static void transfer(ikvm::Video &v)
+static void transfer(ikvm::Video &v, unsigned char *socketbuffer)
 {
-       	unsigned char *socketbuffer = (unsigned char *)malloc (1024);
 	uint32_t count;
 	uint32_t send_len;
 	TRANSFER_HEADER Transfer_Header;
@@ -145,6 +144,7 @@ int main_v2(int argc, char **argv) {
 	bool is_streaming = false;
 	size_t frameNumber = 0;
 	ikvm::Video video("/dev/video0");
+	unsigned char *socketbuffer;
 
 	while ((opt = getopt_long(argc, argv, opt_short, opt_long, NULL)) != (char) - 1) {
 		switch (opt) {
@@ -201,6 +201,7 @@ int main_v2(int argc, char **argv) {
 		if (net_setup() != 0)
 			return -1;
 
+		socketbuffer = (unsigned char*)malloc ((size_t) 1024);
 		while(1) {
 			video.start();
 			if (video.getFrame() == 0) {
@@ -209,7 +210,7 @@ int main_v2(int argc, char **argv) {
 					       __func__,  frameNumber, video.getFrameNumber());
 
 				frameNumber = video.getFrameNumber();
-				transfer(video);
+				transfer(video, socketbuffer);
 			}
 
 			if (video.needsResize())
@@ -219,6 +220,7 @@ int main_v2(int argc, char **argv) {
 			}
 		}
 		video.stop();
+		free(socketbuffer);
 		free(buffer);
 	} else {
 		uint8_t count = 0;

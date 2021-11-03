@@ -11,7 +11,7 @@
 #include "ikvm_video.hpp"
 #include "regs-video.h"
 
-static const char opt_short [] = "c:shq:p:a:m:f:";
+static const char opt_short [] = "c:shq:p:a:m:f:t:";
 static const struct option opt_long [] = {
 	{ "capture",	required_argument,	NULL,	'c' },
 	{ "stream",	no_argument,		NULL,	's' },
@@ -21,6 +21,7 @@ static const struct option opt_long [] = {
 	{ "aspeed_fmt",	required_argument,	NULL,	'a' },
 	{ "HQmode",	required_argument,	NULL,	'm' },
 	{ "fps",	required_argument,	NULL,	'f' },
+	{ "test",	required_argument,	NULL,	't' },
 	{ 0, 0, 0, 0 }
 };
 
@@ -45,12 +46,13 @@ static void print_usage(FILE *fp, int argc, char **argv)
 		" -a | --aspeed_fmt 0 for standard jpeg; 1 for aspeed jpeg mode; 2 for partial jpeg\n"
 		" -m | --HQmode     enable HQ mode\n"
 		" -f | --fps        0 for no control; o/w new-fps = org-fps*fps/60 \n"
+		" -t | --test       0 stop/run test;\n"
 		"\n",
 		argv[0]
 		);
 }
 
-static void save2file(char *data, size_t size, char *fileName)
+static void save2file(char *data, size_t size, const char *fileName)
 {
 	int fd = open(fileName, O_CREAT | O_WRONLY, 0644);
 
@@ -66,42 +68,42 @@ static void save2file(char *data, size_t size, char *fileName)
 	close(fd);
 }
 
-static void transfer(ikvm::Video &v, unsigned char *socketbuffer)
+static void transfer(ikvm::Video *v, unsigned char *socketbuffer)
 {
 	uint32_t count;
 	uint32_t send_len;
 	TRANSFER_HEADER Transfer_Header;
 	bool firstframe;
-	char* data = v.getData();
+	char* data = v->getData();
 
 	if (data == nullptr)
 		return;
 
-	if (width == v.getWidth() && height == v.getHeight()) {
+	if (width == v->getWidth() && height == v->getHeight()) {
 		firstframe = false;
 	} else {
 		firstframe = true;
-		width = v.getWidth();
-		height = v.getHeight();
+		width = v->getWidth();
+		height = v->getHeight();
 	}
 
-	Transfer_Header.Data_Length = v.getFrameSize();
+	Transfer_Header.Data_Length = v->getFrameSize();
 	// Jammy: kvm sample no use?
 	Transfer_Header.Blocks_Changed = 1;
 
 	Transfer_Header.Frist_frame = firstframe;
-	Transfer_Header.Compress_type = !v.getFormat();
+	Transfer_Header.Compress_type = !v->getFormat();
 
 //	if (VideoEngineInfo->INFData.DownScalingEnable == 1) {
 //		Transfer_Header.User_Width = VideoEngineInfo->DestinationModeInfo.X;
 //		Transfer_Header.User_Height = VideoEngineInfo->DestinationModeInfo.Y;
 //	} else {
-		Transfer_Header.User_Width = v.getWidth();
-		Transfer_Header.User_Height = v.getHeight();
+		Transfer_Header.User_Width = v->getWidth();
+		Transfer_Header.User_Height = v->getHeight();
 //	}
 	Transfer_Header.RC4_Enable = 0;
-	Transfer_Header.Y_Table = v.getQuality();
-	Transfer_Header.Mode_420 = v.getSubsampling();
+	Transfer_Header.Y_Table = v->getQuality();
+	Transfer_Header.Mode_420 = v->getSubsampling();
 	Transfer_Header.Direct_Mode = 0;
 	//Add for fixing the auto mode and RC4 bug
 	Transfer_Header.Advance_Table = 0;
@@ -125,6 +127,61 @@ static void transfer(ikvm::Video &v, unsigned char *socketbuffer)
 	} while (count != 29);
 }
 
+static void test0(int times)
+{
+	char data[0x200000];
+	size_t length;
+	ikvm::Video *video;
+	int count = 0;
+
+	video = new ikvm::Video("/dev/video0");
+	video->start();
+	video->getFrame();
+	if (video->getData() != nullptr) {
+		length = video->getFrameSize();
+		memcpy(data, video->getData(), length);
+		save2file(data, length, "golden.jpg");
+	} else {
+		printf("%s failed at grab golden\n", __func__);
+		return;
+	}
+	video->stop();
+	delete video;
+
+
+	do {
+		++count;
+		video = new ikvm::Video("/dev/video0");
+		video->start();
+		video->getFrame();
+		if (video->getData() != nullptr) {
+			if (length != video->getFrameSize()) {
+				printf("%s failed at %d, length doesn't match(%d<->%d)\n",
+				       __func__, count, length, video->getFrameSize());
+				return;
+			}
+			// skip header whose timestamp would change
+			if (memcmp(data + 0x50, video->getData() + 0x50, length - 0x50) != 0) {
+				printf("%s failed at %d, data match\n", __func__, count);
+				save2file(video->getData(), length, "fail.jpg");
+				return;
+			}
+		} else {
+			printf("%s failed capture at %d\n", __func__, count);
+		}
+		video->stop();
+		delete video;
+	} while (--times);
+}
+
+static void test(ikvm::Video *v, int cases)
+{
+	if (cases == 0) {
+		delete v;
+		test0(100);
+	}
+}
+
 static const char * const compress_mode_str[] = {"DCT Only",
 	"DCT VQ mix 2-color", "DCT VQ mix 4-color"};
 static const char * const format_str[] = {"Standard JPEG",
@@ -141,20 +198,21 @@ int main_v2(int argc, char **argv) {
 	char fileName[16];
 	bool is_streaming = false;
 	size_t frameNumber = 0;
-	ikvm::Video video("/dev/video0");
+	ikvm::Video *video;
 	unsigned char *socketbuffer;
 
+	video = new ikvm::Video("/dev/video0");
 	while ((opt = getopt_long(argc, argv, opt_short, opt_long, NULL)) != (char) - 1) {
 		switch (opt) {
 			case 'm':
 				hq_enable = strtoul(optarg, 0, 10);
 				printf("aspeed HQ mode is %s\n", hq_enable ? "on" : "off");
-				video.setHQMode(hq_enable);
+				video->setHQMode(hq_enable);
 				break;
 			case 'a':
 				format = strtoul(optarg, 0, 10);
 				printf("aspeed fmt is %s\n", format_str[format]);
-				video.setFormat(format);
+				video->setFormat(format);
 				break;
 			case 'q':
 				quality = strtoul(optarg, 0, 10);
@@ -164,12 +222,12 @@ int main_v2(int argc, char **argv) {
 					quality = 4;
 				}
 				printf("quality is %d\n", quality);
-				video.SetQuality(quality);
+				video->SetQuality(quality);
 				break;
 			case 'p':
 				is420 = strncmp(optarg, "444", 3);
 				printf("subsampling is %s\n", is420 ? "420" : "444");
-				video.setSubsampling(is420);
+				video->setSubsampling(is420);
 				break;
 			case 'f':
 				fps = strtoul(optarg, 0, 10);
@@ -177,7 +235,7 @@ int main_v2(int argc, char **argv) {
 					fps = 60;
 				}
 				printf("fps is %d\n", fps);
-				video.setFrameRate(fps);
+				video->setFrameRate(fps);
 				break;
 			case 's':
 				is_streaming = true;
@@ -188,6 +246,9 @@ int main_v2(int argc, char **argv) {
 				break;
 			case 'h':
 				print_usage(stdout, argc, argv);
+				return 0;
+			case 't':
+				test(video, strtoul(optarg, 0, 10));
 				return 0;
 			default:
 				print_usage(stdout, argc, argv);
@@ -200,40 +261,42 @@ int main_v2(int argc, char **argv) {
 			return -1;
 
 		socketbuffer = (unsigned char*)malloc ((size_t) 1024);
-		video.start();
+		video->start();
 		while(1) {
-			if (video.getFrame() == 0) {
-				if ((video.getFrameNumber() != frameNumber + 1) && video.getFrameNumber())
+			if (video->getFrame() == 0) {
+				if ((video->getFrameNumber() != frameNumber + 1) && video->getFrameNumber())
 					printf("%s: discontinuous frame number (%d -> %d)\n",
-					       __func__,  frameNumber, video.getFrameNumber());
+					       __func__,  frameNumber, video->getFrameNumber());
 
-				frameNumber = video.getFrameNumber();
+				frameNumber = video->getFrameNumber();
 				transfer(video, socketbuffer);
-			}
+			} else
+				pr_dbg("no new frame available\n");
 
-			if (video.needsResize())
+			if (video->needsResize())
 			{
-				video.resize();
+				video->resize();
 				frameNumber = 0;
 			}
 		}
-		video.stop();
+		video->stop();
 		free(socketbuffer);
 		free(buffer);
 	} else {
 		uint8_t count = 0;
 
-		video.start();
+		video->start();
 		while (times--) {
 			sprintf(fileName, "capture%d.jpg", ++count);
 
-			video.getFrame();
-			if ((data = video.getData()) != nullptr) {
-				save2file(data, video.getFrameSize(), fileName);
+			video->getFrame();
+			if ((data = video->getData()) != nullptr) {
+				save2file(data, video->getFrameSize(), fileName);
 			}
 		}
-		video.stop();
+		video->stop();
 	}
+	delete video;
 
 	return 0;
 }

@@ -1196,49 +1196,10 @@ static void otp_print_key_info(void)
 	_otp_print_key(data);
 }
 
-static int otp_strap_image_confirm(struct otp_image_layout *image_layout)
-{
-	int i;
-	uint32_t *strap;
-	uint32_t *strap_ignore;
-	uint32_t *strap_pro;
-	int bit, pbit, ibit;
-	int fail = 0;
-	int ret;
-	struct otpstrap_status otpstrap[64];
-
-	strap = (uint32_t *)image_layout->strap;
-	strap_pro = (uint32_t *)image_layout->strap_pro;
-	strap_ignore = (uint32_t *)image_layout->strap_ignore;
-
-	otp_read_strap(otpstrap);
-	for (i = 0; i < 64; i++) {
-		if (i < 32) {
-			bit = (strap[0] >> i) & 0x1;
-			ibit = (strap_ignore[0] >> i) & 0x1;
-			pbit = (strap_pro[0] >> i) & 0x1;
-		} else {
-			bit = (strap[1] >> (i - 32)) & 0x1;
-			ibit = (strap_ignore[1] >> (i - 32)) & 0x1;
-			pbit = (strap_pro[1] >> (i - 32)) & 0x1;
-		}
-
-		ret = otp_strap_bit_confirm(&otpstrap[i], i, ibit, bit, pbit);
-
-		if (ret == OTP_FAILURE)
-			fail = 1;
-	}
-	if (fail == 1)
-		return OTP_FAILURE;
-	else
-		return OTP_SUCCESS;
-}
-
 static int otp_prog_data(struct otp_image_layout *image_layout, u32 *data)
 {
 	int i;
 	int ret;
-	int data_dw;
 	uint32_t *buf;
 	uint32_t *buf_ignore;
 
@@ -1392,8 +1353,6 @@ static int otp_prog_scu_protect(struct otp_image_layout *image_layout, u32 *otp_
 {
 	int i, j;
 	int pass = 0;
-	u32 prog_address;
-	u32 compare[2];
 	u32 *scupro = (u32 *)image_layout->scu_pro;
 	u32 *scupro_ignore = (u32 *)image_layout->scu_pro_ignore;
 	u32 data_masked;
@@ -1404,7 +1363,6 @@ static int otp_prog_scu_protect(struct otp_image_layout *image_layout, u32 *otp_
 	for (i = 0; i < 2; i++) {
 		data_masked = otp_scu_pro[i]  & ~scupro_ignore[i];
 		buf_masked  = scupro[i] & ~scupro_ignore[i];
-		prog_address = 0xe08 + i * 2;
 		if (data_masked == buf_masked)
 			continue;
 		for (j = 0; j < 32; j++) {
@@ -1878,15 +1836,12 @@ static int otp_update_rid(uint32_t update_num, int force)
 {
 	uint32_t otp_rid[2];
 	u32 sw_rid[2];
-	char update_queue[64];
 	int rid_num = 0;
 	int sw_rid_num = 0;
-	int cursor;
 	int bit_offset;
 	int dw_offset;
 	int i;
 	int ret;
-	int fz;
 
 	if (otp_read_conf_buf(0xa, 2, otp_rid))
 		return OTP_FAILURE;
@@ -2309,6 +2264,8 @@ static int do_otpinfo(int argc, char *const argv[])
 		otp_print_strap_info(view);
 	} else if (!strcmp(argv[1], "scu")) {
 		otp_print_scu_info();
+	}  else if (!strcmp(argv[1], "key")) {
+		otp_print_key_info();
 	} else {
 		return OTP_USAGE;
 	}

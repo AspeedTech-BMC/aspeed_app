@@ -2577,8 +2577,6 @@ int main(int argc, char *argv[])
 		info_cb.key_info_len = ARRAY_SIZE(a2_key_type);
 		info_cb.scu_info = a1_scu_info;
 		info_cb.scu_info_len = ARRAY_SIZE(a1_scu_info);
-		info_cb.scu_info = a1_scu_info;
-		info_cb.scu_info_len = ARRAY_SIZE(a1_scu_info);
 		sprintf(ver_name, "A2");
 		break;
 	case OTP_A3:
@@ -2589,6 +2587,8 @@ int main(int argc, char *argv[])
 		info_cb.strap_info_len = ARRAY_SIZE(a1_strap_info);
 		info_cb.key_info = a3_key_type;
 		info_cb.key_info_len = ARRAY_SIZE(a3_key_type);
+		info_cb.scu_info = a1_scu_info;
+		info_cb.scu_info_len = ARRAY_SIZE(a1_scu_info);
 		sprintf(ver_name, "A3");
 		break;
 	default:

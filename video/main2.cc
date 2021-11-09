@@ -106,7 +106,7 @@ static void transfer(ikvm::Video *v, unsigned char *socketbuffer)
 	Transfer_Header.Mode_420 = v->getSubsampling();
 	Transfer_Header.Direct_Mode = 0;
 	//Add for fixing the auto mode and RC4 bug
-	Transfer_Header.Advance_Table = 0;
+	Transfer_Header.Advance_Table = v->getHQuality() - 1;
 	Transfer_Header.Differential_Enable = 0;
 	Transfer_Header.VQ_Mode = 0;
 

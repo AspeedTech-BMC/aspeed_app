@@ -23,7 +23,7 @@ namespace ikvm
 Video::Video(const std::string& p, int fr, int q, int sub, int fmt) :
     resizeAfterOpen(false), timingsError(false), fd(-1), frameRate(fr),
     lastFrameIndex(-1), height(600), width(800),
-    jpegQuality(q), jpegSubSampling(sub), format(fmt), aspeed_hq_mode(false),
+    jpegQuality(q), jpegSubSampling(sub), format(fmt), aspeedHQMode(false),
     path(p)
 {
     v4l2_queryctrl qctrl;
@@ -441,11 +441,20 @@ int Video::start()
     }
 
     if ((ctrl.id = common_find_ctrl_id("Aspeed HQ Mode")) != 0) {
-        ctrl.value = aspeed_hq_mode;
+        ctrl.value = aspeedHQMode;
         rc = ioctl(fd, VIDIOC_S_CTRL, &ctrl);
         if (rc < 0)
         {
             pr_dbg("Failed to set video jpeg aspeed HQ mode ERROR=%s\n", strerror(errno));
+        }
+    }
+
+    if ((ctrl.id = common_find_ctrl_id("Aspeed HQ Quality")) != 0) {
+        ctrl.value = jpegQuality;
+        rc = ioctl(fd, VIDIOC_S_CTRL, &ctrl);
+        if (rc < 0)
+        {
+            pr_dbg("Failed to set video jpeg aspeed HQ Quality ERROR=%s\n", strerror(errno));
         }
     }
 

@@ -166,7 +166,7 @@ class Video
      */
     inline bool getHQMode() const
     {
-        return aspeed_hq_mode;
+        return aspeedHQMode;
     }
     /*
      * @brief Sets the HQ Mode of compression
@@ -174,7 +174,24 @@ class Video
      */
     inline void setHQMode(bool mode)
     {
-        aspeed_hq_mode = mode;
+        aspeedHQMode= mode;
+    }
+    /*
+     * @brief Gets the hq quality of the video frame
+     *
+     * @return Value of the quality of video frame
+     */
+    inline int getHQuality() const
+    {
+        return aspeedHQuality;
+    }
+    /*
+     * @brief Sets the jpeg format of the video frame
+     *
+     */
+    inline void SetHQuality(int _quality)
+    {
+        aspeedHQuality = _quality;
     }
 
   private:
@@ -232,10 +249,13 @@ class Video
     int jpegSubSampling;
     /* @brief aspeed's jpeg format, which support partial update */
     int format;
-    /* @brief aspeed's hq mode, which further reduce the amount of data,
-     * but could filter out some important data.
+    /* @brief aspeed's hq mode, only for 444 subsampling
+     * It can have better quality for static video by 2-pass video compression scheme
      */
-    bool aspeed_hq_mode;
+    bool aspeedHQMode;
+    /* @brief aspeed's hq quality, (1~12)
+     */
+    bool aspeedHQuality;
     /* @brief Path to the V4L2 video device */
     const std::string path;
     /* @brief Streaming buffer storage */

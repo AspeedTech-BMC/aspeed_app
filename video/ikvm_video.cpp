@@ -404,6 +404,13 @@ int Video::start()
         pr_dbg("Failed to query video device format ERROR=%s\n", strerror(errno));
     }
 
+    fmt.fmt.pix.pixelformat = format ? V4L2_PIX_FMT_AJPG : V4L2_PIX_FMT_JPEG;
+    rc = ioctl(fd, VIDIOC_S_FMT, &fmt);
+    if (rc < 0)
+    {
+        pr_dbg("Failed to set video device format ERROR=%s\n", strerror(errno));
+    }
+
     memset(&sparm, 0, sizeof(v4l2_streamparm));
     sparm.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
     sparm.parm.capture.timeperframe.numerator = 1;
@@ -429,15 +436,6 @@ int Video::start()
     if (rc < 0)
     {
         pr_dbg("Failed to set video jpeg subsampling ERROR=%s\n", strerror(errno));
-    }
-
-    if ((ctrl.id = common_find_ctrl_id("Aspeed JPEG Format")) != 0) {
-        ctrl.value = format;
-        rc = ioctl(fd, VIDIOC_S_CTRL, &ctrl);
-        if (rc < 0)
-        {
-            pr_dbg("Failed to set video jpeg aspeed format ERROR=%s\n", strerror(errno));
-        }
     }
 
     if ((ctrl.id = common_find_ctrl_id("Aspeed HQ Mode")) != 0) {

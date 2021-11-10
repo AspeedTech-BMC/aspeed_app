@@ -7,6 +7,8 @@
 #include <linux/videodev2.h>
 
 #define pr_dbg(fmt, args...) printf("%s(): " fmt, __func__, ## args)
+#define V4L2_PIX_FMT_AJPG     v4l2_fourcc('A', 'J', 'P', 'G')
+
 
 namespace ikvm
 {

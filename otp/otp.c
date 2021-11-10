@@ -19,7 +19,7 @@
 #include "otp_info.h"
 #include "sha256.h"
 
-#define OTP_VER				"1.2.0"
+#define OTP_VER				"1.2.1"
 
 #define BIT(nr)					(1UL << (nr))
 #define OTP_REGION_STRAP		BIT(0)
@@ -1190,8 +1190,7 @@ static void otp_print_key_info(void)
 	u32 data[2048];
 	int i;
 
-	for (i = 0; i < 2048 ; i += 2)
-		otp_read_data(i, &data[i]);
+	otp_read_data_buf(0, 2048, data);
 
 	_otp_print_key(data);
 }
@@ -1620,8 +1619,8 @@ static int otp_prog_image(uint8_t *buf, int nconfirm)
 			ret = -1;
 		}
 		printf("Read OTP Data Region:\n");
-		for (i = 0; i < 2048 ; i += 2)
-			otp_read_data(i, &data[i]);
+
+		otp_read_data_buf(0, 2048, data);
 
 		printf("Check writable...\n");
 		if (otp_check_data_image(&image_layout, data) == OTP_FAILURE)

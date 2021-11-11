@@ -499,10 +499,13 @@ static int otp_prog_data_dw(uint32_t value, uint32_t otp_data, uint32_t ignore, 
 		return OTP_SUCCESS;
 
 	for (j = 0; j < 32; j++) {
-		if (((data_masked >> j) & 0x1) == 1 && ((buf_masked >> j) & 0x1) == 0)
-			return OTP_FAILURE;
-		if (((data_masked >> j) & 0x1) == 0 && ((buf_masked >> j) & 0x1) == 1)
-			return OTP_FAILURE;
+		if (prog_address % 2 == 0) {
+			if (((data_masked >> j) & 0x1) == 1 && ((buf_masked >> j) & 0x1) == 0)
+				return OTP_FAILURE;
+		} else {
+			if (((data_masked >> j) & 0x1) == 0 && ((buf_masked >> j) & 0x1) == 1)
+				return OTP_FAILURE;
+		}
 	}
 	for (j = 0; j < 32; j++) {
 		if ((ignore >> j) & 0x1)
@@ -1188,7 +1191,6 @@ static int otp_print_data_image(struct otp_image_layout *image_layout)
 static void otp_print_key_info(void)
 {
 	u32 data[2048];
-	int i;
 
 	otp_read_data_buf(0, 2048, data);
 

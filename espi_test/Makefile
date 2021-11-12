@@ -10,7 +10,7 @@ endif
 CFLAGS += -Wall -lpthread
 CC      = $(CROSS_COMPILE)gcc
 
-all: perif-test vw-test oob-test oob-pch-test safs-test mafs-test
+all: perif-test vw-test oob-test oob-pch-test safs-test mafs-test mmbi-test
 
 perif-test: perif-test.o
 	$(CC) $(CFLAGS) perif-test.o -o $@
@@ -30,12 +30,15 @@ safs-test: safs-test.o
 mafs-test: mafs-test.o
 	$(CC) $(CFLAGS) mafs-test.o -o $@
 
+mmbi-test: mmbi-test.o
+	$(CC) $(CFLAGS) mmbi-test.o -o $@
+
 .c.o:
 	$(CC) $(CFLAGS) -c $<
 
 clean:
-	rm -f perif-test vw-test oob-test oob-pch-test safs-test mafs-test *.o
+	rm -f perif-test vw-test oob-test oob-pch-test safs-test mafs-test mmbi-test *.o
 
 install:
-	cp perif-test vw-test oob-test oob-pch-test safs-test mafs-test $(INSTALL_DIR)
+	cp perif-test vw-test oob-test oob-pch-test safs-test mafs-test mmbi-test $(INSTALL_DIR)
 

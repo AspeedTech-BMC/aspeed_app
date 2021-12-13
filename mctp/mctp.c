@@ -58,35 +58,56 @@ static const struct option long_options[] = {
 	{ 0, 0, 0, 0 }
 };
 
+void tx_debug(__u8 *mctp_header, __u8 *xfer_buff, __u8 length)
+{
+	__u32 i;
+
+	printf("mctp header --\n");
+	for (i = 0; i < 16; i++)
+		printf("%02x ", mctp_header[i]);
+
+	printf("\n");
+	printf("mctp buff  --\n");
+	printf("----- TX PADLOAD - HEADER ----\n");
+	for (i = 0; i < 16; i++)
+		printf("%02x ", xfer_buff[i]);
+	printf("\n");
+
+	printf("----- PADLOAD - DATA ----\n");
+	for (i = 16; i < length; i++) {
+		if (i % 16 == 0)
+			printf("\n");
+		printf("%02x ", xfer_buff[i]);
+	}
+
+	printf("\n");
+}
+
 int aspeed_mctp_tx(struct mctp_binding_astpcie *astpcie, int length, int bus,
 		   int dev, int fun, int eid, int routing, int som, int eom)
 {
 	struct aspeed_mctp_xfer xfer;
 	struct pcie_vdm_header *header;
 	unsigned char *mctp_header;
-	unsigned int data_len = 0, malloc_size;
+	unsigned int remain_xfer;
 	unsigned char pattern = 0;
 	unsigned char sed = 0;
-	int ret;
-	int i;
+	int ret = 0;
+	int i, xfer_index;
 	int debug = 1;
 
-	data_len = length - 16;
+	remain_xfer = length;
 	pattern = rand();
 	sed = 0x01;
 
 	memset(&xfer, 0, sizeof(struct aspeed_mctp_xfer));
-	malloc_size = MAX(length + ASPEED_MCTP_PCIE_VDM_HDR_SIZE,
-			  16 + ASPEED_MCTP_PCIE_VDM_HDR_SIZE);
-	malloc_size = ALIGN(malloc_size, 4);
-	xfer.header = malloc(malloc_size);
+	xfer.header = malloc(astpcie->mtu + ASPEED_MCTP_PCIE_VDM_HDR_SIZE);
 	xfer.xfer_buff = (unsigned char *)(xfer.header +
 					   ASPEED_MCTP_PCIE_VDM_HDR_SIZE_DW);
 
 	header = (struct pcie_vdm_header *)xfer.header;
 	mctp_header = (unsigned char *)xfer.header;
 	//prepare default vdm header
-	header->length = ALIGN(length, 4) / 4;
 	header->attr = 0x1;
 	header->ep = 0x0;
 	header->td = 0x0;
@@ -96,8 +117,6 @@ int aspeed_mctp_tx(struct mctp_binding_astpcie *astpcie, int length, int bus,
 	header->message_code = 0x7f;
 	header->vdm_code = 0x0;
 
-	header->pad_len = ALIGN(length, 4) - length;
-
 	header->vender_id = 0x1ab4;
 
 	header->pcie_target_id =
@@ -106,7 +125,6 @@ int aspeed_mctp_tx(struct mctp_binding_astpcie *astpcie, int length, int bus,
 	header->msg_tag = 0;
 	header->to = 0;
 	header->pkt_seq = 0;
-	header->eom = eom;
 	header->som = som;
 	header->src_epid = 0;
 	header->dest_epid = eid & 0xff;
@@ -130,40 +148,50 @@ int aspeed_mctp_tx(struct mctp_binding_astpcie *astpcie, int length, int bus,
 	xfer.xfer_buff[14] = sed;
 	xfer.xfer_buff[15] = pattern;
 
-	for (i = 16; i < (data_len + 16); i++) {
-		xfer.xfer_buff[i] = (xfer.xfer_buff[i - 1] + sed) % 0xff;
-	}
-
-	if (debug) {
+	if (debug)
 		printf("mctp_tx pattern : 0x%02x\n   sed : 0x%02x\n   len : 0x%02x\n",
 		       xfer.xfer_buff[15], xfer.xfer_buff[14],
 		       xfer.xfer_buff[13]);
 
-		printf("mctp header --\n");
-		for (i = 0; i < 16; i++)
-			printf("%02x ", mctp_header[i]);
-
-		printf("\n");
-		printf("mctp buff  --\n");
-		printf("----- TX PADLOAD - HEADER ----\n");
-		for (i = 0; i < 16; i++) {
-			printf("%02x ", xfer.xfer_buff[i]);
-		}
-		printf("\n");
-
-		printf("----- PADLOAD - DATA ----\n");
-		for (i = 16; i < (data_len + 16); i++) {
-			if (i % 16 == 0)
-				printf("\n");
-			printf("%02x ", xfer.xfer_buff[i]);
-		}
-
-		printf("\n");
+	while (remain_xfer > astpcie->mtu) {
+		header->length = astpcie->mtu >> 2;
+		header->pad_len = 0;
+		header->eom = 0;
+		xfer_index = header->som ? 17 : 1;
+		xfer.xfer_buff[xfer_index - 1] = (pattern + sed) % 0xff;
+		for (; xfer_index < astpcie->mtu; xfer_index++)
+			xfer.xfer_buff[xfer_index] =
+				(xfer.xfer_buff[xfer_index - 1] + sed) % 0xff;
+		if (debug)
+			tx_debug(mctp_header, xfer.xfer_buff, astpcie->mtu);
+		/* letobe */
+		mctp_swap_pcie_vdm_hdr(&xfer);
+		xfer.buf_len = ALIGN(astpcie->mtu, 4);
+		ret = aspeed_mctp_send(astpcie, &xfer);
+		remain_xfer -= astpcie->mtu;
+		pattern = xfer.xfer_buff[astpcie->mtu - 1] % 0xff;
+		mctp_swap_pcie_vdm_hdr(&xfer);
+		header->som = 0;
+		header->pkt_seq += 1;
 	}
-	/* letobe */
-	mctp_swap_pcie_vdm_hdr(&xfer);
-	xfer.buf_len = ALIGN(length, 4);
-	ret = aspeed_mctp_send(astpcie, &xfer);
+
+	if (remain_xfer) {
+		header->length = ALIGN(remain_xfer, 4) >> 2;
+		header->pad_len = ALIGN(remain_xfer, 4) - remain_xfer;
+		header->eom = eom;
+		xfer_index = header->som ? 17 : 1;
+		xfer.xfer_buff[xfer_index - 1] = (pattern + sed) % 0xff;
+		for (; xfer_index < remain_xfer; xfer_index++)
+			xfer.xfer_buff[xfer_index] =
+				(xfer.xfer_buff[xfer_index - 1] + sed) % 0xff;
+		if (debug)
+			tx_debug(mctp_header, xfer.xfer_buff, remain_xfer);
+		/* letobe */
+		mctp_swap_pcie_vdm_hdr(&xfer);
+		xfer.buf_len = ALIGN(remain_xfer, 4);
+		ret = aspeed_mctp_send(astpcie, &xfer);
+	}
+
 	free(xfer.header);
 
 	if (ret < 0)
@@ -191,7 +219,7 @@ next_mctp:
 	header->length = 0;
 	vmd_header = (unsigned char *)xfer->header;
 	memset(header, 0, sizeof(struct pcie_vdm_header));
-
+	wait_for_message(astpcie);
 	ret = aspeed_mctp_recv(astpcie, xfer);
 	if (ret < 0)
 		return ret;
@@ -259,6 +287,9 @@ next_mctp:
 
 	sed = xfer->xfer_buff[14];
 	pattern = xfer->xfer_buff[15];
+
+	if (xfer->xfer_buff[16] != (pattern + sed) % 0xff)
+		return 1;
 
 	if (debug)
 		printf("----- RX PADLOAD len [%d] - HEADER ----\n",
@@ -401,6 +432,10 @@ int main(int argc, char *argv[])
 	if (ret < 0)
 		return ret;
 
+	ret = aspeed_mctp_get_mtu(astpcie);
+	if (ret < 0)
+		return ret;
+
 	srand(time(NULL));
 
 	if (!xfer_dir) {
@@ -423,7 +458,6 @@ int main(int argc, char *argv[])
 					break;
 			}
 		} else {
-			wait_for_message(astpcie);
 			rx_flag = aspeed_mctp_rx(astpcie, &mctp_xfer);
 			if (rx_flag == 1) {
 				printf("[%d] : Fail\n", times);

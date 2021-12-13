@@ -65,7 +65,7 @@ int aspeed_mctp_recv(struct mctp_binding_astpcie *astpcie,
 	ret = read(astpcie->fd, xfer->header, ASPEED_MCTP_XFER_SIZE);
 	if (ret < 0) {
 		MCTP_DBUG("err\n");
-		perror("ioctl MCTP No RX!\n");
+		perror("MCTP read error!\n");
 	}
 	return ret;
 }
@@ -78,7 +78,7 @@ int aspeed_mctp_send(struct mctp_binding_astpcie *astpcie,
 	ret = write(astpcie->fd, xfer->header,
 		    xfer->buf_len + ASPEED_MCTP_PCIE_VDM_HDR_SIZE);
 	if (ret < 0) {
-		perror("ioctl MCTP TX error!\n");
+		perror("MCTP write error!\n");
 		return ret;
 	}
 	return ret;
@@ -99,4 +99,18 @@ void wait_for_message(struct mctp_binding_astpcie *astpcie)
 int aspeed_mctp_register_default_handler(struct mctp_binding_astpcie *astpcie)
 {
 	return ioctl(astpcie->fd, ASPEED_MCTP_IOCTL_REGISTER_DEFAULT_HANDLER);
+}
+
+int aspeed_mctp_get_mtu(struct mctp_binding_astpcie *astpcie)
+{
+	struct aspeed_mctp_get_mtu get_mtu;
+	int rc;
+
+	rc = ioctl(astpcie->fd, ASPEED_MCTP_IOCTL_GET_MTU,
+		   &get_mtu);
+	if (!rc)
+		astpcie->mtu = get_mtu.mtu;
+	printf("astpcie->mtu = %d\n", astpcie->mtu);
+
+	return rc;
 }

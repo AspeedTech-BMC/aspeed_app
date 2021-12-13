@@ -20,6 +20,68 @@
 /*************************************************************************************/
 #define ASPEED_MCTP_XFER_SIZE 4096
 
+/*
+ * MCTP operations
+ * @ASPEED_MCTP_IOCTL_FILTER_EID: enable/disable filter incoming packets based
+ * on Endpoint ID (BROKEN)
+ * @ASPEED_MCTP_IOCTL_GET_BDF: read PCI bus/device/function of MCTP Controller
+ * @ASPEED_MCTP_IOCTL_GET_MEDIUM_ID: read MCTP physical medium identifier
+ * related to PCIe revision
+ * @ASPEED_MCTP_IOCTL_GET_MTU: read max transmission unit (in bytes)
+ * @ASPEED_MCTP_IOCTL_REGISTER_DEFAULT_HANDLER Register client as default
+ * handler that receives all MCTP messages that were not dispatched to other
+ * clients
+ * @ASPEED_MCTP_IOCTL_REGISTER_TYPE_HANDLER Register client to receive all
+ * messages of specified MCTP type or PCI vendor defined type
+ * @ASPEED_MCTP_IOCTL_UNREGISTER_TYPE_HANDLER Unregister client as handler
+ * for specified MCTP type or PCI vendor defined message type
+ * @ASPEED_MCTP_GET_EID_INFO: read list of existing endpoint mappings
+ * returns count which is less of the two requested count and existing count
+ * @ASPEED_MCTP_SET_EID_INFO: write list of endpoint mappings
+ * overwrites already existing endpoint mappings
+ */
+
+struct aspeed_mctp_filter_eid {
+	__u8 eid;
+	bool enable;
+};
+
+struct aspeed_mctp_get_bdf {
+	__u16 bdf;
+};
+
+struct aspeed_mctp_get_medium_id {
+	__u8 medium_id;
+};
+
+struct aspeed_mctp_get_mtu {
+	__u8 mtu;
+};
+
+struct aspeed_mctp_type_handler_ioctl {
+	__u8 mctp_type;		/* MCTP message type as per DSP239*/
+	/* Below params must be 0 if mctp_type is not Vendor Defined PCI */
+	__u16 pci_vendor_id;	/* PCI Vendor ID */
+	__u16 vendor_type;	/* Vendor specific type */
+	__u16 vendor_type_mask; /* Mask applied to vendor type */
+};
+
+struct aspeed_mctp_eid_info {
+	__u8 eid;
+	__u16 bdf;
+};
+
+struct aspeed_mctp_get_eid_info {
+	__u64 ptr;
+	__u16 count;
+	__u8 start_eid;
+};
+
+struct aspeed_mctp_set_eid_info {
+	__u64 ptr;
+	__u16 count;
+};
+
 #define ASPEED_MCTP_IOCTL_BASE 0x4d
 
 #define ASPEED_MCTP_IOCTL_FILTER_EID                                           \
@@ -94,6 +156,7 @@ struct aspeed_mctp_xfer {
 
 struct mctp_binding_astpcie {
 	int fd;
+	__u8 mtu;
 };
 
 void mctp_swap_pcie_vdm_hdr(struct aspeed_mctp_xfer *data);
@@ -105,3 +168,4 @@ int aspeed_mctp_send(struct mctp_binding_astpcie *astpcie,
 int aspeed_mctp_recv(struct mctp_binding_astpcie *astpcie,
 		     struct aspeed_mctp_xfer *xfer);
 int aspeed_mctp_register_default_handler(struct mctp_binding_astpcie *astpcie);
+int aspeed_mctp_get_mtu(struct mctp_binding_astpcie *astpcie);

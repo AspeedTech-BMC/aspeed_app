@@ -55,7 +55,7 @@ struct aspeed_mctp_get_medium_id {
 };
 
 struct aspeed_mctp_get_mtu {
-	__u8 mtu;
+	__u16 mtu;
 };
 
 struct aspeed_mctp_type_handler_ioctl {
@@ -156,7 +156,7 @@ struct aspeed_mctp_xfer {
 
 struct mctp_binding_astpcie {
 	int fd;
-	__u8 mtu;
+	__u16 mtu;
 };
 
 void mctp_swap_pcie_vdm_hdr(struct aspeed_mctp_xfer *data);

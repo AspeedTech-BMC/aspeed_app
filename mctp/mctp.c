@@ -58,7 +58,7 @@ static const struct option long_options[] = {
 	{ 0, 0, 0, 0 }
 };
 
-void tx_debug(__u8 *mctp_header, __u8 *xfer_buff, __u8 length)
+void tx_debug(__u8 *mctp_header, __u8 *xfer_buff, __u16 length)
 {
 	__u32 i;
 

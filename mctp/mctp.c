@@ -23,6 +23,7 @@ static void usage(FILE *fp, int argc, char **argv)
 		"Usage: %s [options]\n\n"
 		"Options:\n"
 		" -h | --help                 Print this message\n"
+		" -n | --node                 mctp device node\n"
 		" -t | --xfer                 mctp xfer\n"
 		" -r | --recv                 mctp recv\n"
 		" -i | --dest_id              destination endpoint ID\n"
@@ -34,7 +35,9 @@ static void usage(FILE *fp, int argc, char **argv)
 		" -c | --continue             continue (0: loop, n: count number)\n"
 		" -s | --som                  set som\n"
 		" -e | --eom                  set eom\n"
-		" example: tx : mctp -t -b 7 -d 0 -f 0 -o 2 -l 1024, rx : mctp -r\n"
+		" example:\n"
+		" tx : mctp -n /dev/aspeed-mctp -t -b 7 -d 0 -f 0 -o 2 -l 1024\n"
+		" rx : mctp -n /dev/aspeed-mctp -r\n"
 		"",
 		argv[0]);
 }

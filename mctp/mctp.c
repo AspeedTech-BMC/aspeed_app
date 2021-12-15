@@ -468,10 +468,9 @@ int main(int argc, char *argv[])
 			} else if (rx_flag == 0) {
 				printf("[%d] : PASS\n", times);
 				times++;
-			} else {
-				if (times >= cont && cont != 0)
-					break;
 			}
+			if (times >= cont && cont != 0)
+				break;
 		}
 	}
 

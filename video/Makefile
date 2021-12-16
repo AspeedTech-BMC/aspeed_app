@@ -4,11 +4,13 @@ INSTALL_DIR := $(INST)
 endif
 endif
 
-CFLAGS	+= -Wall 
-OBJS	= ast-video.o video.o
+CFLAGS	+= -Wall -O3
+CXXFLAGS+= -Wall -O3
+OBJS	= main.o main1.o main2.o video.o ikvm_video.o
 EXE	= ast-video
 
-CC      = $(CROSS_COMPILE)gcc
+CC      = $(CROSS_COMPILE)g++
+CXX     = $(CROSS_COMPILE)g++
 
 .c.o:
 	$(CC) $(CFLAGS) -c $<

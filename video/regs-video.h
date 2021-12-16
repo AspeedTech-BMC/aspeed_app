@@ -177,7 +177,4 @@ struct rc4_state
     int m[256];
 };
 
-//  RC4 keys. Current keys are fedcba98765432210
-unsigned char EncodeKeys[256];
-
 #endif

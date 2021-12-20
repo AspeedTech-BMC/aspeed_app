@@ -116,15 +116,9 @@ static void transfer(ikvm::Video &v, unsigned char *socketbuffer)
 	} while (count != 29);
 
 	//send frame
-	if(Transfer_Header.Compress_type) {
-		do {
-			send_len = send(connfd, (unsigned char *)data, Transfer_Header.Data_Length, MSG_WAITALL);
-		} while (send_len != Transfer_Header.Data_Length);
-	} else {
-		do {
-			send_len = send(connfd, (unsigned char *)data, Transfer_Header.Data_Length * 4, MSG_WAITALL);
-		} while (send_len != Transfer_Header.Data_Length * 4);
-	}
+	do {
+		send_len = send(connfd, (unsigned char *)data, Transfer_Header.Data_Length, MSG_WAITALL);
+	} while (send_len != Transfer_Header.Data_Length);
 
 	do {
 		count = recv (connfd, socketbuffer, 29, MSG_WAITALL);

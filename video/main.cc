@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+// Copyright (C) 2021 Aspeed Technology Inc.
+
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>

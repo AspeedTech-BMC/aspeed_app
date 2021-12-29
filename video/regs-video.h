@@ -1,6 +1,6 @@
-/*
- * Copyright 2020 Aspeed Technology Inc.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
+/* Copyright (C) 2021 Aspeed Technology Inc. */
+
 typedef unsigned long u32;
 typedef unsigned short u16;
 typedef unsigned char u8;

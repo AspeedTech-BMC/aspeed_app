@@ -1,6 +1,6 @@
-/*
- * Copyright 2020 Aspeed Technology Inc.
- */
+// SPDX-License-Identifier: GPL-2.0-or-later
+// Copyright (C) 2021 Aspeed Technology Inc.
+
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>

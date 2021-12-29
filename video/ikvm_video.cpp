@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+
 #include "ikvm_video.hpp"
 
 #include <err.h>

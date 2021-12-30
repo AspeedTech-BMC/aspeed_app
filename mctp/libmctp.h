@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0+ */
 /*
+ * Copyright (c) 2020 Intel Corporation
  * Copyright 2021 Aspeed Technology Inc.
  */
 #include <stdio.h>

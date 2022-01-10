@@ -1,6 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
- * Copyright (c) 2019-2021 ASPEED Technology Inc. All rights reserved. ASPEED CONFIDENTIAL. Unpublished
- * work. Copying, access, use or distribution requires an applicable license approved by ASPEED.
+ * Copyright 2021 Aspeed Technology Inc.
  */
 
 #include <stdio.h>

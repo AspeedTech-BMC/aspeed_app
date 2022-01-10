@@ -1,10 +1,6 @@
-
-# Entry points
-
+# SPDX-License-Identifier: GPL-2.0
 #
-# Copyright (c) 2019-2032 ASPEED Technolnogy. All rights reserved. ASPEED CONFIDENTIAL. Unpublished
-# work. Copying, access, use or distribution requires an applicable license approved by ASPEED.
-#
+# Copyright 2021 Aspeed Technology Inc.
 
 ifdef INST
 ifeq ("$(origin INST)", "command line")

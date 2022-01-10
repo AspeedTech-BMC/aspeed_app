@@ -1,12 +1,12 @@
+# SPDX-License-Identifier: GPL-2.0
+#
+# Copyright 2021 Aspeed Technology Inc.
+
 CC=$(CROSS_COMPILE)gcc
 AR=$(CROSS_COMPILE)ar
 
 CFLAGS += -I$(AST_SDK_TOP)/kernel/linux/drivers/soc/aspeed/rvas/
 
-#
-# Copyright (c) 2019-2021 ASPEED Technology. All rights reserved. ASPEED CONFIDENTIAL. Unpublished
-# work. Copying, access, use or distribution requires an applicable license approved by ASPEED.
-#
 
 LIB_NAME=librvas.a
 LIB_OBJS=rvas.o

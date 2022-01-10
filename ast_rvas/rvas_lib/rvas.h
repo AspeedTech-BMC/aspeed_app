@@ -1,10 +1,6 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
- * This file is part of the ASPEED Linux Device Driver for ASPEED Baseboard Management Controller.
- * Refer to the README file included with this package for driver version and adapter compatibility.
- *
- * Copyright (C) 2019-2021 ASPEED Technology Inc. All rights reserved.
- *
- * the file COPYING included with this package.
+ * Copyright 2021 Aspeed Technology Inc.
  */
 
 

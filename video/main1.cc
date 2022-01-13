@@ -304,13 +304,17 @@ init:
 		} while (data != 29);
 		//send frame 
 //		printf("send frame \n");
-		do {
-			send_len = send(connfd, (unsigned char *)stream_virt_addr, Transfer_Header.Data_Length, MSG_WAITALL);
-		} while (send_len != Transfer_Header.Data_Length);
 		if(Transfer_Header.Compress_type) {
 			jpeg_encode = 0;
+			do {
+				send_len = send(connfd, (unsigned char *)jpeg_virt_addr, Transfer_Header.Data_Length, MSG_WAITALL);
+				send_len = send(connfd, (unsigned char *)stream_virt_addr, Transfer_Header.Data_Length, MSG_WAITALL);
+			} while (send_len != Transfer_Header.Data_Length);
 			firstframe = 1;	//next will be full frame 
 		} else {
+			do {
+				send_len = send(connfd, (unsigned char *)stream_virt_addr, Transfer_Header.Data_Length * 4, MSG_WAITALL);
+			} while (send_len != Transfer_Header.Data_Length * 4);
 			firstframe = 0;
 		}
 //	    printf("Frist_frame = %d,  send fram size %d , change %d, rc4 = %d, diff = %d \n",Transfer_Header.Frist_frame, Transfer_Header.Data_Length, Transfer_Header.Blocks_Changed, VideoEngineInfo->FrameHeader.RC4Enable, VideoEngineInfo->INFData.DifferentialSetting);		

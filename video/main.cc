@@ -94,14 +94,14 @@ int get_driver_version(void)
 
 int main(int argc, char **argv) {
 	int v = get_driver_version();
-	
+
 	if (v == -1) {
 		perror("no video device available\n");
 		return -1;
 	}
 
 	printf("App works for aspeed video driver v%d\n\n", v);
-	if (v == 0)
+	if (v == 1)
 		return main_v1();
 
 	return main_v2(argc, argv);

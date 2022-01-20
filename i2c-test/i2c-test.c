@@ -1,3 +1,7 @@
+/* SPDX-License-Identifier: GPL-2.0 */
+/*
+ * Copyright Aspeed Technology Inc.
+ */
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/ioctl.h>

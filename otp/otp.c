@@ -19,7 +19,7 @@
 #include "otp_info.h"
 #include "sha256.h"
 
-#define OTP_VER				"1.2.0"
+#define OTP_VER				"1.2.1"
 
 #define BIT(nr)					(1UL << (nr))
 #define OTP_REGION_STRAP		BIT(0)
@@ -499,10 +499,13 @@ static int otp_prog_data_dw(uint32_t value, uint32_t otp_data, uint32_t ignore, 
 		return OTP_SUCCESS;
 
 	for (j = 0; j < 32; j++) {
-		if (((data_masked >> j) & 0x1) == 1 && ((buf_masked >> j) & 0x1) == 0)
-			return OTP_FAILURE;
-		if (((data_masked >> j) & 0x1) == 0 && ((buf_masked >> j) & 0x1) == 1)
-			return OTP_FAILURE;
+		if (prog_address % 2 == 0) {
+			if (((data_masked >> j) & 0x1) == 1 && ((buf_masked >> j) & 0x1) == 0)
+				return OTP_FAILURE;
+		} else {
+			if (((data_masked >> j) & 0x1) == 0 && ((buf_masked >> j) & 0x1) == 1)
+				return OTP_FAILURE;
+		}
 	}
 	for (j = 0; j < 32; j++) {
 		if ((ignore >> j) & 0x1)
@@ -1188,10 +1191,8 @@ static int otp_print_data_image(struct otp_image_layout *image_layout)
 static void otp_print_key_info(void)
 {
 	u32 data[2048];
-	int i;
 
-	for (i = 0; i < 2048 ; i += 2)
-		otp_read_data(i, &data[i]);
+	otp_read_data_buf(0, 2048, data);
 
 	_otp_print_key(data);
 }
@@ -1620,8 +1621,8 @@ static int otp_prog_image(uint8_t *buf, int nconfirm)
 			ret = -1;
 		}
 		printf("Read OTP Data Region:\n");
-		for (i = 0; i < 2048 ; i += 2)
-			otp_read_data(i, &data[i]);
+
+		otp_read_data_buf(0, 2048, data);
 
 		printf("Check writable...\n");
 		if (otp_check_data_image(&image_layout, data) == OTP_FAILURE)
@@ -2577,8 +2578,6 @@ int main(int argc, char *argv[])
 		info_cb.key_info_len = ARRAY_SIZE(a2_key_type);
 		info_cb.scu_info = a1_scu_info;
 		info_cb.scu_info_len = ARRAY_SIZE(a1_scu_info);
-		info_cb.scu_info = a1_scu_info;
-		info_cb.scu_info_len = ARRAY_SIZE(a1_scu_info);
 		sprintf(ver_name, "A2");
 		break;
 	case OTP_A3:
@@ -2589,6 +2588,8 @@ int main(int argc, char *argv[])
 		info_cb.strap_info_len = ARRAY_SIZE(a1_strap_info);
 		info_cb.key_info = a3_key_type;
 		info_cb.key_info_len = ARRAY_SIZE(a3_key_type);
+		info_cb.scu_info = a1_scu_info;
+		info_cb.scu_info_len = ARRAY_SIZE(a1_scu_info);
 		sprintf(ver_name, "A3");
 		break;
 	default:

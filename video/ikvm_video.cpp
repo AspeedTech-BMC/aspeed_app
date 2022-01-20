@@ -26,7 +26,7 @@ Video::Video(const std::string& p, int fr, int q, int sub, int fmt) :
     resizeAfterOpen(false), timingsError(false), fd(-1), frameRate(fr),
     lastFrameIndex(-1), height(600), width(800),
     jpegQuality(q), jpegSubSampling(sub), format(fmt), aspeedHQMode(false),
-    path(p)
+    path(p), input(0), dbg_width(0), dbg_height(0)
 {
     v4l2_queryctrl qctrl;
 
@@ -167,6 +167,39 @@ int Video::getFrame()
     }
 
     return valid_frame ? 0 : -1;
+}
+
+void Video::setInput(int input)
+{
+    this->input = input;
+}
+
+void Video::setInputSize(int width, int height)
+{
+    dbg_width = width;
+    dbg_height = height;
+}
+
+void Video::getInputBuffer(unsigned char **addr)
+{
+    *addr = (unsigned char *)mmap(NULL, width * height * 4, PROT_READ | PROT_WRITE,
+                                  MAP_SHARED, fd, 0);
+    if (*addr == MAP_FAILED) {
+        pr_dbg("mmap buffer for bmp isn't ready!!\n");
+    }
+}
+
+void Video::capture()
+{
+    int rc;
+    struct v4l2_input input;
+
+    input.index = 2;
+    rc = ioctl(fd, VIDIOC_S_INPUT, &input);
+    if (rc < 0)
+    {
+        pr_dbg("Failed to set video trigger capture ERROR=%s\n", strerror(errno));
+    }
 }
 
 bool Video::needsResize()
@@ -370,6 +403,7 @@ int Video::start()
     v4l2_format fmt;
     v4l2_streamparm sparm;
     v4l2_control ctrl;
+    v4l2_input input;
 
     if (fd >= 0)
     {
@@ -396,6 +430,27 @@ int Video::start()
     {
         pr_dbg("Video device doesn't support this application\n");
         return -1;
+    }
+
+    input.index = this->input;
+    rc = ioctl(fd, VIDIOC_S_INPUT, &input);
+    if (rc < 0)
+    {
+        pr_dbg("Failed to set video trigger capture ERROR=%s\n", strerror(errno));
+    }
+
+    if (this->input == 2) {
+        v4l2_dv_timings timings;
+
+        memset(&timings, 0, sizeof(v4l2_dv_timings));
+
+        timings.bt.width = dbg_width;
+        timings.bt.height = dbg_height;
+        rc = ioctl(fd, VIDIOC_S_DV_TIMINGS, &timings);
+        if (rc < 0)
+        {
+            pr_dbg("Failed to set timings ERROR=%s\n", strerror(errno));
+        }
     }
 
     memset(&fmt, 0, sizeof(v4l2_format));

@@ -10,9 +10,13 @@
 #include <unistd.h>
 
 #include <netdb.h>
+#include <sys/mman.h>
 
 #include "ikvm_video.hpp"
 #include "regs-video.h"
+#include "bmp.h"
+
+#define JPEG_DATA_OFFSET	0x50
 
 static const char opt_short [] = "c:shq:p:a:m:f:t:";
 static const struct option opt_long [] = {
@@ -68,6 +72,21 @@ static void save2file(char *data, size_t size, const char *fileName)
 		printf("%s file write failed\n", fileName);
 	}
 	printf("Save to %s, size %d\n", fileName, size);
+	close(fd);
+}
+
+static void loadFile(char *data, size_t size, const char *fileName)
+{
+	int fd = open(fileName, O_RDONLY);
+
+	if (fd < 0) {
+		printf("%s file open failed\n", fileName);
+		return;
+	}
+
+	if (read(fd, data, size) < 0) {
+		printf("%s file write failed\n", fileName);
+	}
 	close(fd);
 }
 
@@ -164,7 +183,7 @@ static void test0(int times)
 				return;
 			}
 			// skip header whose timestamp would change
-			if (memcmp(data + 0x50, video->getData() + 0x50, length - 0x50) != 0) {
+			if (memcmp(data + JPEG_DATA_OFFSET, video->getData() + JPEG_DATA_OFFSET, length - JPEG_DATA_OFFSET) != 0) {
 				printf("%s failed at %d, data match\n", __func__, count);
 				save2file(video->getData(), length, "fail.jpg");
 				return;
@@ -177,11 +196,76 @@ static void test0(int times)
 	} while (--times);
 }
 
+static void test1(ikvm::Video *v)
+{
+	int rc = 0;
+	int w, h;
+	int bmp_w, bmp_h;
+	unsigned char *buf = NULL;
+	char data[0x200000];
+	int count = 1;
+	char filename[16];
+
+	printf("In this test, it will load bmp, golden_#.bmp, for test.\n");
+	printf("Please switch video driver to input from memory by sysfs.\n");
+	printf("Please give the size of the bmp used.\n");
+	printf("width  :");
+	scanf("%d", &w);
+	printf("height :");
+	scanf("%d", &h);
+	v->setInput(2);
+	v->setInputSize(w, h);
+
+	v->start();
+	v->getInputBuffer(&buf);
+	if (buf == MAP_FAILED)
+		return;
+
+	printf("\n-----Test Start-----\n");
+	do {
+		// prepare test data
+		snprintf(filename, 16, "test_%d.bmp", count);
+		rc = loadBMP(filename, buf, &bmp_w, &bmp_h);
+		if (rc)
+			break;
+
+		if (bmp_w != w || bmp_h != h) {
+			printf("bmp size(%d * %d) isn't match\n", bmp_w, bmp_h);
+			break;
+		}
+
+		// prepare golden data
+		snprintf(filename, 16, "golden_%d.jpg", count);
+		loadFile(data, 0x200000, filename);
+
+		printf("*%3d: ", count);
+		// single-step trigger
+		v->capture();
+		if (v->getFrame() == 0) {
+			if (memcmp(data + JPEG_DATA_OFFSET, v->getData() + JPEG_DATA_OFFSET, v->getFrameSize() - JPEG_DATA_OFFSET) != 0) {
+				printf("NG, data mismatch\n");
+				snprintf(filename, 16, "fail_%d.jpg", count);
+				save2file(v->getData(), v->getFrameSize(), filename);
+			} else
+				printf("OK\n");
+		} else {
+			rc = 1;
+			printf("NG, no new frame available\n");
+		}
+		count++;
+	} while(1);
+	v->stop();
+
+	printf("\nTest Result: %s\n", rc ? "Pass" : "Fail");
+}
+
 static void test(ikvm::Video *v, int cases)
 {
 	if (cases == 0) {
 		delete v;
 		test0(100);
+	} else if (cases == 1) {
+		test1(v);
 	}
 }
 
@@ -225,7 +309,7 @@ int main_v2(int argc, char **argv) {
 					quality = 4;
 				}
 				printf("quality is %d\n", quality);
-				video->SetQuality(quality);
+				video->setQuality(quality);
 				break;
 			case 'p':
 				is420 = strncmp(optarg, "444", 3);

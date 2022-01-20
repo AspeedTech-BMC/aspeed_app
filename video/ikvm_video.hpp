@@ -61,6 +61,14 @@ class Video
         stop();
         return start();
     }
+    /* @brief set the input of the video to capture */
+    void setInput(int input);
+    /* @brief set the size of input, aspeed test only */
+    void setInputSize(int width, int height);
+    /* @brief get input buffer address of the video, aspeed test only */
+    void getInputBuffer(unsigned char **addr);
+    /* @brief trigger capture, aspeed test only */
+    void capture();
 
     /*
      * @brief Gets the desired video frame rate in frames per second
@@ -87,7 +95,7 @@ class Video
     /*
      * @brief Gets the height of the video frame
      *
-     * @return Value of the height of video frame in pixels
+     * @return Value of the height of video frame in lines
      */
     inline size_t getHeight() const
     {
@@ -124,7 +132,7 @@ class Video
      * @brief Sets the jpeg format of the video frame
      *
      */
-    inline void SetQuality(int _quality)
+    inline void setQuality(int _quality)
     {
         jpegQuality = _quality;
     }
@@ -193,7 +201,7 @@ class Video
      * @brief Sets the jpeg format of the video frame
      *
      */
-    inline void SetHQuality(int _quality)
+    inline void setHQuality(int _quality)
     {
         aspeedHQuality = _quality;
     }
@@ -243,7 +251,7 @@ class Video
     int frameRate;
     /* @brief Buffer index for the last video frame */
     int lastFrameIndex;
-    /* @brief Height in pixels of the video frame */
+    /* @brief Height in lines of the video frame */
     size_t height;
     /* @brief Width in pixels of the video frame */
     size_t width;
@@ -266,6 +274,12 @@ class Video
     std::vector<Buffer> buffers;
     /* @brief map of ctrl and its name */
     std::map<std::string, struct v4l2_queryctrl> ctrl_str2q;
+    /* @brief input of the capture. 0: vga, 1:gfx, 2:memory */
+    int input;
+    /* @brief Width in pixels of the dbg video frame from memory, only useful if input is 2 */
+    size_t dbg_width;
+    /* @brief Height in lines of the dbg video frame from memory, only useful if input is 2 */
+    size_t dbg_height;
 };
 
 } // namespace ikvm

@@ -6,7 +6,7 @@ endif
 
 CFLAGS	+= -Wall -O3
 CXXFLAGS+= -Wall -O3
-OBJS	= main.o main1.o main2.o video.o ikvm_video.o
+OBJS	= main.o main1.o main2.o video.o ikvm_video.o bmp.o
 EXE	= ast-video
 
 CC      = $(CROSS_COMPILE)g++

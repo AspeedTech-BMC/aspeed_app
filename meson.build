@@ -10,7 +10,7 @@ executable('rvas_test', ['ast_rvas/rvas_test.c'], install: true, link_with: libr
     dependencies: thread_dep, include_directories: include_directories('ast_rvas/rvas_lib'))
 
 # Video
-executable('ast-video', ['video/ikvm_video.cpp', 'video/main1.cc', 'video/main2.cc', 'video/main.cc', 'video/video.cc'], install: true)
+executable('ast-video', ['video/ikvm_video.cpp', 'video/main1.cc', 'video/main2.cc', 'video/main.cc', 'video/video.cc', 'video/bmp.cc'], install: true)
 install_data('video/video.inf')
 
 # i2c

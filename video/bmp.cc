@@ -315,14 +315,13 @@ static void bmpReadPixels1( FILE *file, unsigned char *dest, bmp_palette_element
 }
 
 
-int loadBMP( const char *filename, unsigned char **data, int *width, int *height )
+int loadBMP( const char *filename, unsigned char *buf, int *width, int *height )
 {
 	FILE *file;
 	int16_t magic_number;
 	bmp_file_header_t file_header;
 	bmp_bitmap_info_header_t info_header;
 	bmp_palette_element_t *palette = NULL;
-	unsigned char *buf;
 
 	file = fopen( filename, "rb");
 	if( !file ) {
@@ -382,13 +381,13 @@ int loadBMP( const char *filename, unsigned char **data, int *width, int *height
 	}
 
 	/* memory allocation */
-	buf = (unsigned char *)malloc( info_header.width * info_header.height * 4 );
-	if( !buf ) {
-		printf("malloc() failed in function loadBMP()\n");
-		if( info_header.colors_used ) free( palette );
-		fclose( file );
-		return 1;
-	}
+	//buf = (unsigned char *)malloc( info_header.width * info_header.height * 4 );
+	//if( !buf ) {
+	//	printf("malloc() failed in function loadBMP()\n");
+	//	if( info_header.colors_used ) free( palette );
+	//	fclose( file );
+	//	return 1;
+	//}
 	memset( buf, 0x00, info_header.width * info_header.height * 4 );
 
 	/* load image data */
@@ -424,7 +423,7 @@ int loadBMP( const char *filename, unsigned char **data, int *width, int *height
 	/* picture is ready, export data */
 	*width = info_header.width;
 	*height = info_header.height;
-	*data = buf;
+	//*data = buf;
 
 	if( info_header.colors_used ) free( palette );
 	fclose( file );

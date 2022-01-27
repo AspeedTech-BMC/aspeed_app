@@ -186,17 +186,14 @@ static void bmpReadPixelsRLE4( FILE *file, unsigned char *dest, bmp_palette_elem
 static void bmpReadPixels32( FILE *file, unsigned char *dest, int w, int h )
 {
 	int i, j;
-	unsigned char px[4], *p;
-
+	unsigned char *p;
 
 	p = dest;
-	for( i = 0; i < h; i++ ) {
+	for( i = h - 1; i >= 0; i-- ) {
+		p = dest + w * 4 * i;
 		for( j = 0; j < w; j++ ) {
-			fread( px, 4, 1, file );
-			*p = px[3]; p++; /* convert BGRX to RGBA */
-			*p = px[2]; p++;
-			*p = px[1]; p++;
-			*p = 0xFF; p++;
+			fread( p, 4, 1, file );	// BGRA
+			p += 4;
 		}
 	}
 }
@@ -204,16 +201,15 @@ static void bmpReadPixels32( FILE *file, unsigned char *dest, int w, int h )
 static void bmpReadPixels24( FILE *file, unsigned char *dest, int w, int h )
 {
 	int i, j;
-	unsigned char px[3], *p;
+	unsigned char *p;
 
 	p = dest;
-	for( i = 0; i < h; i++ ) {
+	for( i = h - 1; i >= 0; i-- ) {
+		p = dest + w * 4 * i;
 		for( j = 0; j < w; j++ ) {
-			fread( px, 3, 1, file );
-			*p = px[2]; p++;	/* convert BGR to RGBA */
-			*p = px[1]; p++;
-			*p = px[0]; p++;
-			*p = 0xFF;  p++;	/* add alpha component */
+			fread( p, 3, 1, file );	// BGR
+			p += 3;
+			*p = 0xFF;  p++;        /* add alpha component */
 		}
 		if( w*3 % 4 != 0 )
 			fseek( file, 4 - (w*3 % 4), SEEK_CUR ); /* if the width is not a multiple of 4, skip the end of the line */

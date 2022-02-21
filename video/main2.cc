@@ -243,6 +243,7 @@ static void test1(ikvm::Video *v)
 		v->capture();
 		if (v->getFrame() == 0) {
 			if (memcmp(data + JPEG_DATA_OFFSET, v->getData() + JPEG_DATA_OFFSET, v->getFrameSize() - JPEG_DATA_OFFSET) != 0) {
+				rc = 1;
 				printf("NG, data mismatch\n");
 				snprintf(filename, 16, "fail_%d.jpg", count);
 				save2file(v->getData(), v->getFrameSize(), filename);

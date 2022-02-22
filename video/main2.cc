@@ -225,11 +225,11 @@ static void test1(ikvm::Video *v)
 	do {
 		// prepare test data
 		snprintf(filename, 16, "test_%d.bmp", count);
-		rc = loadBMP(filename, buf, &bmp_w, &bmp_h);
-		if (rc)
+		if (loadBMP(filename, buf, &bmp_w, &bmp_h))
 			break;
 
 		if (bmp_w != w || bmp_h != h) {
+			rc = -1;
 			printf("bmp size(%d * %d) isn't match\n", bmp_w, bmp_h);
 			break;
 		}
@@ -243,21 +243,22 @@ static void test1(ikvm::Video *v)
 		v->capture();
 		if (v->getFrame() == 0) {
 			if (memcmp(data + JPEG_DATA_OFFSET, v->getData() + JPEG_DATA_OFFSET, v->getFrameSize() - JPEG_DATA_OFFSET) != 0) {
-				rc = 1;
+				rc = -1;
 				printf("NG, data mismatch\n");
 				snprintf(filename, 16, "fail_%d.jpg", count);
 				save2file(v->getData(), v->getFrameSize(), filename);
 			} else
 				printf("OK\n");
 		} else {
-			rc = 1;
+			rc = -1;
 			printf("NG, no new frame available\n");
+			break;
 		}
 		count++;
 	} while(1);
 	v->stop();
 
-	printf("\nTest Result: %s\n", rc ? "Pass" : "Fail");
+	printf("\nTest Result: %s\n", rc ? "Fail" : "Pass");
 }
 
 static void test(ikvm::Video *v, int cases)

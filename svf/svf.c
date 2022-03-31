@@ -135,9 +135,7 @@ enum svf_command {
 	STATE,
 	TDR,
 	TIR,
-	TRST,
-	LOOP,
-	ENDLOOP
+	TRST
 };
 
 static const char *svf_command_name[] = {
@@ -154,9 +152,7 @@ static const char *svf_command_name[] = {
 	"STATE",
 	"TDR",
 	"TIR",
-	"TRST",
-	"LOOP",
-	"ENDLOOP"
+	"TRST"
 };
 
 enum trst_mode {
@@ -314,7 +310,6 @@ static size_t svf_command_buffer_size;
 static int svf_line_number;
 static int svf_getline(char **lineptr, size_t *n, FILE *stream);
 long file_offset;
-int loop;
 
 #define SVF_MAX_BUFFER_SIZE_TO_COMMIT   (1024 * 1024)
 static uint8_t *svf_tdi_buffer, *svf_tdo_buffer, *svf_mask_buffer;
@@ -869,29 +864,6 @@ static int svf_run_command(char *cmd_str)
 	command = svf_find_string_in_array(argus[0],
 			(char **)svf_command_name, ARRAY_SIZE(svf_command_name));
 	switch (command) {
-		case LOOP:
-			if (ERROR_OK != svf_check_tdo())
-				return ERROR_FAIL;
-			if (num_of_argu != 2) {
-				LOG_ERROR("invalid parameter of %s", argus[0]);
-				return ERROR_FAIL;
-			}
-
-			loop = atoi(argus[1]);
-			file_offset = ftell(svf_fd);
-			loop--;
-			break;
-		case ENDLOOP:
-			if (loop > 0) {
-				if (ERROR_OK == svf_check_tdo()) {
-					loop = 0;
-					break;
-				} else {
-					fseek(svf_fd, file_offset, SEEK_SET);
-					loop--;
-				}
-			}
-			break;
 		case ENDDR:
 		case ENDIR:
 			if (num_of_argu != 2) {

@@ -19,7 +19,7 @@
 #include "otp_info.h"
 #include "sha256.h"
 
-#define OTP_VER				"1.2.1"
+#define OTP_VER				"1.2.2"
 
 #define BIT(nr)					(1UL << (nr))
 #define OTP_REGION_STRAP		BIT(0)
@@ -1375,7 +1375,7 @@ static int otp_prog_scu_protect(struct otp_image_layout *image_layout, u32 *otp_
 				continue;
 			if (!((buf_masked >> j) & 0x1))
 				continue;
-			if (otp_prog_conf_b(i, j, 1)) {
+			if (otp_prog_conf_b(i + 28, j, 1)) {
 				pass = 0;
 				break;
 			}

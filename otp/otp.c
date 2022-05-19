@@ -15,11 +15,11 @@
 #include <termios.h>
 #include <termios.h>
 #include <ctype.h>
+#include <openssl/sha.h>
 #include "aspeed-otp.h"
 #include "otp_info.h"
-#include "sha256.h"
 
-#define OTP_VER				"1.2.2"
+#define OTP_VER				"2.0.0"
 
 #define BIT(nr)					(1UL << (nr))
 #define OTP_REGION_STRAP		BIT(0)
@@ -39,7 +39,7 @@
 #define OTP_KEY_TYPE_HMAC		5
 
 #define OTP_MAGIC		        "SOCOTP"
-#define CHECKSUM_LEN	        32
+#define CHECKSUM_LEN	        SHA384_DIGEST_LENGTH
 #define OTP_INC_DATA	        BIT(31)
 #define OTP_INC_CONF	        BIT(30)
 #define OTP_INC_STRAP	        BIT(29)
@@ -60,7 +60,7 @@
 #define OTPTOOL_VERSION_MAJOR(x) (((x) >> 24) & 0xff)
 #define OTPTOOL_VERSION_PATCHLEVEL(x) (((x) >> 12) & 0xfff)
 #define OTPTOOL_VERSION_SUBLEVEL(x) ((x) & 0xfff)
-#define OTPTOOL_COMPT_VERSION 1
+#define OTPTOOL_COMPT_VERSION 2
 
 typedef unsigned char u8;
 typedef unsigned short u16;
@@ -1525,12 +1525,12 @@ static int otp_check_scu_image(struct otp_image_layout *image_layout, u32 *otp_s
 
 static int otp_verify_image(uint8_t *src_buf, uint32_t length, uint8_t *digest_buf)
 {
-	SHA256_CTX ctx;
+	SHA512_CTX ctx;
 	u8 digest_ret[CHECKSUM_LEN];
 
-	sha256_init(&ctx);
-	sha256_update(&ctx, src_buf, length);
-	sha256_final(&ctx, digest_ret);
+	SHA384_Init(&ctx);
+	SHA384_Update(&ctx, src_buf, length);
+	SHA384_Final(digest_ret, &ctx);
 
 	if (!memcmp(digest_buf, digest_ret, CHECKSUM_LEN))
 		return OTP_SUCCESS;

@@ -4,7 +4,7 @@ INSTALL_DIR := $(INST)
 endif
 endif
 
-CFLAGS += -Wall -Werror
+CFLAGS += -Wall -Werror -lcrypto
 OBJS = otp.o sha256.o
 EXE	= otp
 

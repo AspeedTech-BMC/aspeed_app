@@ -1409,13 +1409,13 @@ XXR_common:
 						ARRAY_SIZE(svf_trst_mode_name));
 				switch (i_tmp) {
 				case TRST_ON:
-					//if (!svf_nil)
-					//	jtag_add_reset(1, 0);
+					if (!svf_nil)
+						ast_set_jtag_trst(1);
 					break;
 				case TRST_Z:
 				case TRST_OFF:
-					//if (!svf_nil)
-					//	jtag_add_reset(0, 0);
+					if (!svf_nil)
+						ast_set_jtag_trst(0);
 					break;
 				case TRST_ABSENT:
 					break;

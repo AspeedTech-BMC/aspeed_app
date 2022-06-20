@@ -84,6 +84,19 @@ int ast_set_jtag_freq(unsigned int freq)
 	return 0;
 }
 
+int ast_set_jtag_trst(unsigned int active)
+{
+	int retval;
+	unsigned int trst_active = active;
+
+	retval = ioctl(jtag_fd, JTAG_SIOCTRST, &trst_active);
+	if (retval == -1) {
+		perror("ioctl JTAG set trst fail!\n");
+		return -1;
+	}
+	return 0;
+}
+
 int ast_get_tap_state(enum jtag_tapstate* tap_state)
 {
 	int retval;

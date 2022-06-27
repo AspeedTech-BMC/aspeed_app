@@ -20,7 +20,7 @@ typedef unsigned long long u64;
 #undef min
 #define min(x, y) ((x) < (y) ? (x) : (y))
 
-int OpenLog(const char *name);
+int OpenLog(const char*);
 void CloseLog(void);
 #ifdef USE_FILE_LOG
 void Log(const char*, ...);
@@ -31,67 +31,62 @@ void LogInfo(const char*, ...);
 #endif // USE_FILE_LOG
 void DisplayBuffer(void*, u32);
 
-enum RVASStatus Initialize(void);
-enum RVASStatus Shutdown(void);
-enum RVASStatus NewContext(void **aNewContextPtr);
-enum RVASStatus DeleteContext(void *aContext);
-enum RVASStatus Alloc(size_t aLengthInBytes, void **aBufferPtr, void **aMemoryHandlePtr);
-// in:rvb, out:rmh
-enum RVASStatus Free(void *aMemoryHandle); // in:rmh, out:rvb
+RVASStatus Initialize(void);
+RVASStatus Shutdown(void);
+RVASStatus NewContext(RVASContext* aNewContextPtr);
+RVASStatus DeleteContext(RVASContext aContext);
+RVASStatus Alloc(size_t aLengthInBytes, void** aBufferPtr,RVASMemoryHandle* aMemoryHandlePtr); // in:rvb, out:rmh
+RVASStatus Free(RVASMemoryHandle aMemoryHandle); // in:rmh, out:rvb
 
-enum RVASStatus LocalMonitorOn(void);
-enum RVASStatus LocalMonitorOff(void);
-enum RVASStatus IsLocalMonitorOn(bool *pbMonitorIsOn);
+RVASStatus LocalMonitorOn(void);
+RVASStatus LocalMonitorOff(void);
+RVASStatus IsLocalMonitorOn(bool* pbMonitorIsOn);
 
-enum RVASStatus GetVideoGeometry(struct VideoGeometry *aGeometryPtr); // out:vg
-void display_event_map(const struct EventMap *pem);
-enum RVASStatus WaitForVideoEvent(void *aContext, struct EventMap anEventMap,
-		struct EventMap *aMapPtr, u32 aTimeoutInMs); // in:rc, em, dw, out:em,
-enum RVASStatus GetGRCRegisters(void *aMemoryHandle); // in:rc, gm, out:rmh
-enum RVASStatus ReadSnoopMap(void *aContext, void *aMemoryHandle, bool bClear);
-enum RVASStatus ReadSnoopAggregate(void *aContext, struct SnoopAggregate *anAggregatePtr,
-		bool bClear); // in:rc, b, out:sa
+RVASStatus GetVideoGeometry(VideoGeometry* aGeometryPtr); // out:vg
+void display_event_map(const EventMap* pem);
+RVASStatus WaitForVideoEvent(RVASContext aContext, EventMap anEventMap,EventMap* aMapPtr, u32 aTimeoutInMs); // in:rc, em, dw, out:em,
+RVASStatus GetGRCRegisters(RVASMemoryHandle aMemoryHandle); // in:rc, gm, out:rmh
+RVASStatus ReadSnoopMap(RVASContext aContext, RVASMemoryHandle aMemoryHandle, bool bClear);
+RVASStatus ReadSnoopAggregate(RVASContext aContext,SnoopAggregate* anAggregatePtr, bool bClear); // in:rc, b, out:sa
 
-enum RVASStatus FetchVideoTiles(void *rc, void *aMemoryHandleFVTA,
-		void *aMemoryHandleOutput,
-		void *aMemoryHandleTemp);
-// This aMemoryHandleTemp buffer need to be the same size as output buffer
+RVASStatus FetchVideoTiles( RVASContext rc, RVASMemoryHandle aMemoryHandleFVTA,
+        RVASMemoryHandle aMemoryHandleOutput,
+        RVASMemoryHandle aMemoryHandleTemp); // This aMemoryHandleTemp buffer need to be the same size as output buffer
 
 // in:rmh(descriptors), rmh2(video data out), out:dw(checksum), dw2(rle count)
-enum RVASStatus FetchVideoSlices(void *rc, void *aMemoryHandleFSA,
-	void *aMemoryHandleNonRLE, void *aMemoryHandleRLE);
+RVASStatus FetchVideoSlices(RVASContext rc, RVASMemoryHandle aMemoryHandleFSA,
+    RVASMemoryHandle aMemoryHandleNonRLE, RVASMemoryHandle aMemoryHandleRLE);
 
-enum RVASStatus FetchTextData(void *rc, struct VideoGeometry aGeometry,
-	struct FetchMap *paTextMap, void *aMemoryHandleNonRLE,
-	void *aMemoryHandleRLE); // in:vg, tfm, rmh, out:dw
+RVASStatus FetchTextData(RVASContext rc, VideoGeometry aGeometry,
+    FetchMap *paTextMap, RVASMemoryHandle aMemoryHandleNonRLE,
+    RVASMemoryHandle aMemoryHandleRLE); // in:vg, tfm, rmh, out:dw
 
 //mode 13
-enum RVASStatus FetchVGAGraphicsData(void *rc, struct VideoGeometry aGeometry,
-	struct FetchMap *paVideoMap,
-	void *aMemoryHandleNonRLE, void *aMemoryHandleRLE); // in:vg, tfm, rmh, out:dw
+RVASStatus FetchVGAGraphicsData(RVASContext rc, VideoGeometry aGeometry,
+    FetchMap *paVideoMap,
+        RVASMemoryHandle aMemoryHandleNonRLE, RVASMemoryHandle aMemoryHandleRLE); // in:vg, tfm, rmh, out:dw
 
 // in:rmh(descriptors), rmh2(video data out), out:dw(checksum), dw2(rle count)
-enum RVASStatus RunLengthEncode(void *aMemoryHandleIn,
-	void *aMemoryHandleOut, u8 byRLETripletCode,
-	u8 byRLERepeatCode, u32 *aRLECountPtr, u32 *aCheckSumPtr); //out:dw
+RVASStatus RunLengthEncode(RVASMemoryHandle aMemoryHandleIn,
+        RVASMemoryHandle aMemoryHandleOut, u8 byRLETripletCode,
+        u8 byRLERepeatCode, u32* aRLECountPtr, u32* aCheckSumPtr); //out:dw
 
 // Set Tile Snoop Interrupt Count Register (TSICR)
-enum RVASStatus SetTSECounter(u32 value); //out:dw
+RVASStatus SetTSECounter(u32 value); //out:dw
 
 // Get Tile Snoop Interrupt Count Register (TSICR)
 u32 GetTSECounter(void); //out:dw
 
 // Reset the Video Engine
-enum RVASStatus ResetVideoEngine(enum ResetEngineMode resetMode); //out:dw
+RVASStatus ResetVideoEngine(ResetEngineMode resetMode); //out:dw
 
 // Get the Video Engine Config
-enum RVASStatus GetVideoEngineConfig(struct VideoConfig *ast_config); //out:dw
+RVASStatus GetVideoEngineConfig(VideoConfig* ast_config); //out:dw
 
 // Set the Video Engine Config
-enum RVASStatus SetVideoEngineConfig(const struct VideoConfig *ast_config); //out:dw
+RVASStatus SetVideoEngineConfig(const VideoConfig* ast_config); //out:dw
 
 // Get the Video Engine Data
-enum RVASStatus GetVideoEngineJPEGData(struct MultiJpegConfig *ast_multi);
-//void*aMemoryHandle); //out:dw
+RVASStatus GetVideoEngineJPEGData(MultiJpegConfig*  ast_multi); //RVASMemoryHandle aMemoryHandle); //out:dw
 
 #endif //__RVAS_API_H_

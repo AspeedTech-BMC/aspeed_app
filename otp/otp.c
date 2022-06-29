@@ -2170,7 +2170,6 @@ static int parse_config(struct sb_info *si)
 {
 	int i;
 	u32 cfg0, cfg3, cfg4;
-	u32 sign_scheme;
 	u32 sb_mode;
 	u32 key_retire;
 	u32 rsa_len;
@@ -2180,7 +2179,6 @@ static int parse_config(struct sb_info *si)
 	otp_read_conf(3, &cfg3);
 	otp_read_conf(4, &cfg4);
 
-	sign_scheme = (cfg0 >> 10) & 0xf;
 	sb_mode = (cfg0 >> 7) & 0x1;
 	si->enc_flag = (cfg0 >> 27) & 0x1;
 	key_retire = (cfg4 & 0x7f) | ((cfg4 >> 16) & 0x7f);
@@ -2251,6 +2249,7 @@ static void parse_data(struct key_list *kl, int *key_num, struct sb_info *si, u3
 {
 	const struct otpkey_type *key_info_array = info_cb.key_info;
 	int i, j;
+	int id = 0;
 	u32 h;
 	u32 t;
 
@@ -2262,8 +2261,9 @@ static void parse_data(struct key_list *kl, int *key_num, struct sb_info *si, u3
 			if (t == key_info_array[j].value) {
 				kl[*key_num].key_info = &key_info_array[j];
 				kl[*key_num].offset = h & 0x1ff8;
-				kl[*key_num].id = h & 0x7;
-				if (si->retire_list[kl[i].id] == 1)
+				id = h & 0x7;
+				kl[*key_num].id = id;
+				if (si->retire_list[id] == 1)
 					kl[*key_num].retire = 1;
 				else
 					kl[*key_num].retire = 0;
@@ -2396,9 +2396,9 @@ static int otp_verify_boot_image(uint8_t *sec_image)
 	int pass = 0;
 
 	otp_read_data_buf(0, 2048, data);
-	parse_data(kl, &key_num, &si, data);
 	if (parse_config(&si))
 		return OTP_FAILURE;
+	parse_data(kl, &key_num, &si, data);
 	otp_read_conf(10, &otp_rid[0]);
 	otp_read_conf(11, &otp_rid[1]);
 

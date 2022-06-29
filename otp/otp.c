@@ -16,6 +16,7 @@
 #include <termios.h>
 #include <ctype.h>
 #include <openssl/sha.h>
+#include <openssl/rsa.h>
 #include "aspeed-otp.h"
 #include "otp_info.h"
 
@@ -38,8 +39,11 @@
 #define OTP_KEY_TYPE_VAULT		4
 #define OTP_KEY_TYPE_HMAC		5
 
+#define OTP_LIT_END			0
+#define OTP_BIG_END			1
+
 #define OTP_MAGIC		        "SOCOTP"
-#define CHECKSUM_LEN	        SHA384_DIGEST_LENGTH
+#define CHECKSUM_LEN	        64
 #define OTP_INC_DATA	        BIT(31)
 #define OTP_INC_CONF	        BIT(30)
 #define OTP_INC_STRAP	        BIT(29)
@@ -99,6 +103,7 @@ struct otpconf_parse {
 struct otpkey_type {
 	int value;
 	int key_type;
+	int order;
 	int need_id;
 	char information[110];
 };
@@ -143,44 +148,150 @@ struct otp_image_layout {
 	uint8_t *scu_pro_ignore;
 };
 
+struct sb_info {
+	int header_offset;
+	int secure_region;
+	int rsa_algo;
+	int sha_algo;
+	int digest_len;
+	int retire_list[8];
+	int enc_flag;
+};
+
+struct key_list {
+	const struct otpkey_type *key_info;
+	int offset;
+	int id;
+	int retire;
+};
+
+struct sb_header {
+	u32 aes_data_offset;
+	u32 enc_offset;
+	u32 sign_image_size;
+	u32 signature_offset;
+	u32 revision_low;
+	u32 revision_high;
+	u32 reserved;
+	u32 bl1_header_checksum;
+};
+
 static struct otp_info_cb info_cb;
 
 static const struct otpkey_type a0_key_type[] = {
-	{0, OTP_KEY_TYPE_AES,   0, "AES-256 as OEM platform key for image encryption/decryption"},
-	{1, OTP_KEY_TYPE_VAULT, 0, "AES-256 as secret vault key"},
-	{4, OTP_KEY_TYPE_HMAC,  1, "HMAC as encrypted OEM HMAC keys in Mode 1"},
-	{8, OTP_KEY_TYPE_RSA_PUB,   1, "RSA-public as OEM DSS public keys in Mode 2"},
-	{9, OTP_KEY_TYPE_RSA_PUB,   0, "RSA-public as SOC public key"},
-	{10, OTP_KEY_TYPE_RSA_PUB,  0, "RSA-public as AES key decryption key"},
-	{13, OTP_KEY_TYPE_RSA_PRIV,  0, "RSA-private as SOC private key"},
-	{14, OTP_KEY_TYPE_RSA_PRIV,  0, "RSA-private as AES key decryption key"},
+	{
+		0, OTP_KEY_TYPE_AES,       OTP_LIT_END, 0,
+		"AES-256 as OEM platform key for image encryption/decryption"
+	},
+	{
+		1, OTP_KEY_TYPE_VAULT,     OTP_LIT_END, 0,
+		"AES-256 as secret vault key"
+	},
+	{
+		4, OTP_KEY_TYPE_HMAC,      OTP_LIT_END, 1,
+		"HMAC as encrypted OEM HMAC keys in Mode 1"
+	},
+	{
+		8, OTP_KEY_TYPE_RSA_PUB,   OTP_LIT_END, 1,
+		"RSA-public as OEM DSS public keys in Mode 2"
+	},
+	{
+		9, OTP_KEY_TYPE_RSA_PUB,   OTP_LIT_END, 0,
+		"RSA-public as SOC public key"
+	},
+	{
+		10, OTP_KEY_TYPE_RSA_PUB,  OTP_LIT_END, 0,
+		"RSA-public as AES key decryption key"
+	},
+	{
+		13, OTP_KEY_TYPE_RSA_PRIV, OTP_LIT_END, 0,
+		"RSA-private as SOC private key"
+	},
+	{
+		14, OTP_KEY_TYPE_RSA_PRIV, OTP_LIT_END, 0,
+		"RSA-private as AES key decryption key"
+	},
 };
 
 static const struct otpkey_type a1_key_type[] = {
-	{1, OTP_KEY_TYPE_VAULT, 0, "AES-256 as secret vault key"},
-	{2, OTP_KEY_TYPE_AES,   1, "AES-256 as OEM platform key for image encryption/decryption in Mode 2 or AES-256 as OEM DSS keys for Mode GCM"},
-	{8, OTP_KEY_TYPE_RSA_PUB,   1, "RSA-public as OEM DSS public keys in Mode 2"},
-	{10, OTP_KEY_TYPE_RSA_PUB,  0, "RSA-public as AES key decryption key"},
-	{14, OTP_KEY_TYPE_RSA_PRIV,  0, "RSA-private as AES key decryption key"},
+	{
+		1, OTP_KEY_TYPE_VAULT,     OTP_LIT_END, 0,
+		"AES-256 as secret vault key"
+	},
+	{
+		2, OTP_KEY_TYPE_AES,       OTP_LIT_END, 1,
+		"AES-256 as OEM platform key for image encryption/decryption in Mode 2 or AES-256 as OEM DSS keys for Mode GCM"
+	},
+	{
+		8, OTP_KEY_TYPE_RSA_PUB,   OTP_LIT_END, 1,
+		"RSA-public as OEM DSS public keys in Mode 2"
+	},
+	{
+		10, OTP_KEY_TYPE_RSA_PUB,  OTP_LIT_END, 0,
+		"RSA-public as AES key decryption key"
+	},
+	{
+		14, OTP_KEY_TYPE_RSA_PRIV, OTP_LIT_END, 0,
+		"RSA-private as AES key decryption key"
+	},
 };
 
 static const struct otpkey_type a2_key_type[] = {
-	{1, OTP_KEY_TYPE_VAULT, 0, "AES-256 as secret vault key"},
-	{2, OTP_KEY_TYPE_AES,   1, "AES-256 as OEM platform key for image encryption/decryption in Mode 2 or AES-256 as OEM DSS keys for Mode GCM"},
-	{8, OTP_KEY_TYPE_RSA_PUB,   1, "RSA-public as OEM DSS public keys in Mode 2"},
-	{10, OTP_KEY_TYPE_RSA_PUB,  0, "RSA-public as AES key decryption key"},
-	{14, OTP_KEY_TYPE_RSA_PRIV,  0, "RSA-private as AES key decryption key"},
+	{
+		1, OTP_KEY_TYPE_VAULT,     OTP_LIT_END, 0,
+		"AES-256 as secret vault key"
+	},
+	{
+		2, OTP_KEY_TYPE_AES,       OTP_LIT_END, 1,
+		"AES-256 as OEM platform key for image encryption/decryption in Mode 2 or AES-256 as OEM DSS keys for Mode GCM"
+	},
+	{
+		8, OTP_KEY_TYPE_RSA_PUB,   OTP_LIT_END, 1,
+		"RSA-public as OEM DSS public keys in Mode 2"
+	},
+	{
+		10, OTP_KEY_TYPE_RSA_PUB,  OTP_LIT_END, 0,
+		"RSA-public as AES key decryption key"
+	},
+	{
+		14, OTP_KEY_TYPE_RSA_PRIV, OTP_LIT_END, 0,
+		"RSA-private as AES key decryption key"
+	},
 };
 
 static const struct otpkey_type a3_key_type[] = {
-	{1, OTP_KEY_TYPE_VAULT, 0, "AES-256 as secret vault key"},
-	{2, OTP_KEY_TYPE_AES,   1, "AES-256 as OEM platform key for image encryption/decryption in Mode 2 or AES-256 as OEM DSS keys for Mode GCM"},
-	{8, OTP_KEY_TYPE_RSA_PUB,   1, "RSA-public as OEM DSS public keys in Mode 2"},
-	{9, OTP_KEY_TYPE_RSA_PUB,   1, "RSA-public as OEM DSS public keys in Mode 2(big endian)"},
-	{10, OTP_KEY_TYPE_RSA_PUB,  0, "RSA-public as AES key decryption key"},
-	{11, OTP_KEY_TYPE_RSA_PUB,  0, "RSA-public as AES key decryption key(big endian)"},
-	{12, OTP_KEY_TYPE_RSA_PRIV,  0, "RSA-private as AES key decryption key"},
-	{13, OTP_KEY_TYPE_RSA_PRIV,  0, "RSA-private as AES key decryption key(big endian)"},
+	{
+		1, OTP_KEY_TYPE_VAULT,     OTP_LIT_END, 0,
+		"AES-256 as secret vault key"
+	},
+	{
+		2, OTP_KEY_TYPE_AES,       OTP_LIT_END, 1,
+		"AES-256 as OEM platform key for image encryption/decryption in Mode 2 or AES-256 as OEM DSS keys for Mode GCM"
+	},
+	{
+		8, OTP_KEY_TYPE_RSA_PUB,   OTP_LIT_END, 1,
+		"RSA-public as OEM DSS public keys in Mode 2"
+	},
+	{
+		9, OTP_KEY_TYPE_RSA_PUB,   OTP_BIG_END, 1,
+		"RSA-public as OEM DSS public keys in Mode 2(big endian)"
+	},
+	{
+		10, OTP_KEY_TYPE_RSA_PUB,  OTP_LIT_END, 0,
+		"RSA-public as AES key decryption key"
+	},
+	{
+		11, OTP_KEY_TYPE_RSA_PUB,  OTP_BIG_END, 0,
+		"RSA-public as AES key decryption key(big endian)"
+	},
+	{
+		12, OTP_KEY_TYPE_RSA_PRIV, OTP_LIT_END, 0,
+		"RSA-private as AES key decryption key"
+	},
+	{
+		13, OTP_KEY_TYPE_RSA_PRIV, OTP_BIG_END, 0,
+		"RSA-private as AES key decryption key(big endian)"
+	},
 };
 
 int confirm_yesno(void)
@@ -259,6 +370,42 @@ static int get_rid_num(uint32_t *rid)
 		return ret;
 
 	return rid_num;
+}
+
+static void sb_sha224(u8 *src, u32 len, u8 *digest_ret)
+{
+	SHA256_CTX ctx;
+
+	SHA224_Init(&ctx);
+	SHA224_Update(&ctx, src, len);
+	SHA224_Final(digest_ret, &ctx);
+}
+
+static void sb_sha256(u8 *src, u32 len, u8 *digest_ret)
+{
+	SHA256_CTX ctx;
+
+	SHA256_Init(&ctx);
+	SHA256_Update(&ctx, src, len);
+	SHA256_Final(digest_ret, &ctx);
+}
+
+static void sb_sha384(u8 *src, u32 len, u8 *digest_ret)
+{
+	SHA512_CTX ctx;
+
+	SHA384_Init(&ctx);
+	SHA384_Update(&ctx, src, len);
+	SHA384_Final(digest_ret, &ctx);
+}
+
+static void sb_sha512(u8 *src, u32 len, u8 *digest_ret)
+{
+	SHA512_CTX ctx;
+
+	SHA512_Init(&ctx);
+	SHA512_Update(&ctx, src, len);
+	SHA512_Final(digest_ret, &ctx);
 }
 
 static int otp_strap_bit_confirm(struct otpstrap_status *otpstrap, int offset, int ibit, int bit, int pbit)
@@ -1523,19 +1670,27 @@ static int otp_check_scu_image(struct otp_image_layout *image_layout, u32 *otp_s
 	return OTP_SUCCESS;
 }
 
-static int otp_verify_image(uint8_t *src_buf, uint32_t length, uint8_t *digest_buf)
+static int otp_verify_image(uint8_t *src_buf, uint32_t length, uint8_t *digest_buf, int version)
 {
-	SHA512_CTX ctx;
-	u8 digest_ret[CHECKSUM_LEN];
+	u8 digest_ret[48];
+	int digest_len;
 
-	SHA384_Init(&ctx);
-	SHA384_Update(&ctx, src_buf, length);
-	SHA384_Final(digest_ret, &ctx);
-
-	if (!memcmp(digest_buf, digest_ret, CHECKSUM_LEN))
-		return OTP_SUCCESS;
-	else
+	switch (version) {
+	case 1:
+		sb_sha256(src_buf, length, digest_ret);
+		digest_len = 32;
+		break;
+	case 2:
+		sb_sha384(src_buf, length, digest_ret);
+		digest_len = 48;
+		break;
+	default:
 		return OTP_FAILURE;
+	}
+
+	if (!memcmp(digest_buf, digest_ret, digest_len))
+		return OTP_SUCCESS;
+	return OTP_FAILURE;
 }
 
 static int otp_prog_image(uint8_t *buf, int nconfirm)
@@ -1599,13 +1754,22 @@ static int otp_prog_image(uint8_t *buf, int nconfirm)
 		return OTP_FAILURE;
 	}
 
-	if (OTPTOOL_VERSION_MAJOR(otp_header->otptool_ver) != OTPTOOL_COMPT_VERSION) {
-		printf("OTP image is not generated by otptool v1.x.x\n");
+	switch (OTPTOOL_VERSION_MAJOR(otp_header->otptool_ver)) {
+	case 1:
+		printf("WARNING: OTP image is not generated by otptool v2.x.x\n");
+		printf("Please use the latest version of otptool to generate OTP image\n");
+		ret = otp_verify_image(buf, image_size, checksum, 1);
+		break;
+	case 2:
+		ret = otp_verify_image(buf, image_size, checksum, 2);
+		break;
+	default:
+		printf("OTP image version is not supported\n");
 		return OTP_FAILURE;
 	}
 
-	if (otp_verify_image(buf, image_size, checksum)) {
-		puts("checksum is invalid\n");
+	if (ret) {
+		printf("checksum is invalid\n");
 		return OTP_FAILURE;
 	}
 
@@ -1999,6 +2163,319 @@ static int otp_retire_key(u32 retire_id, int force)
 		return OTP_SUCCESS;
 	}
 	printf("FAILED\n");
+	return OTP_FAILURE;
+}
+
+static int parse_config(struct sb_info *si)
+{
+	int i;
+	u32 cfg0, cfg3, cfg4;
+	u32 sign_scheme;
+	u32 sb_mode;
+	u32 key_retire;
+	u32 rsa_len;
+	u32 sha_len;
+
+	otp_read_conf(0, &cfg0);
+	otp_read_conf(3, &cfg3);
+	otp_read_conf(4, &cfg4);
+
+	sign_scheme = (cfg0 >> 10) & 0xf;
+	sb_mode = (cfg0 >> 7) & 0x1;
+	si->enc_flag = (cfg0 >> 27) & 0x1;
+	key_retire = (cfg4 & 0x7f) | ((cfg4 >> 16) & 0x7f);
+
+	if ((cfg0 >> 16) & 0x3f)
+		si->secure_region = 1;
+	else
+		si->secure_region = 0;
+
+	si->header_offset = cfg3 & 0xffff;
+	if (si->header_offset == 0)
+		si->header_offset = 0x20;
+
+	for (i = 0; i < 8; i++) {
+		if ((key_retire >> i) & 0x1)
+			si->retire_list[i] = 1;
+		else
+			si->retire_list[i] = 0;
+	}
+
+	if (sb_mode == 0) {
+		printf("Mode GCM is not supported.\n");
+		return OTP_FAILURE;
+	}
+
+	if (si->enc_flag)
+		printf("Algorithm: AES_RSA_SHA\n");
+	else
+		printf("Algorithm: RSA_SHA\n");
+
+	rsa_len = (cfg0 >> 10) & 0x3;
+	sha_len = (cfg0 >> 12) & 0x3;
+
+	if (rsa_len == 0) {
+		si->rsa_algo = 1024;
+		printf("RSA length: 1024\n");
+	} else if (rsa_len == 1) {
+		si->rsa_algo = 2048;
+		printf("RSA length: 2048\n");
+	} else if (rsa_len == 2) {
+		si->rsa_algo = 3072;
+		printf("RSA length: 3072\n");
+	} else {
+		si->rsa_algo = 4096;
+		printf("RSA length: 4096\n");
+	}
+	if (sha_len == 0) {
+		si->sha_algo = 224;
+		si->digest_len = 28;
+		printf("HASH length: 224\n");
+	} else if (sha_len == 1) {
+		si->sha_algo = 256;
+		si->digest_len = 32;
+		printf("HASH length: 256\n");
+	} else if (sha_len == 2) {
+		si->sha_algo = 384;
+		si->digest_len = 48;
+		printf("HASH length: 384\n");
+	} else {
+		si->sha_algo = 512;
+		si->digest_len = 64;
+		printf("HASH length: 512\n");
+	}
+	return OTP_SUCCESS;
+}
+
+static void parse_data(struct key_list *kl, int *key_num, struct sb_info *si, u32 *data)
+{
+	const struct otpkey_type *key_info_array = info_cb.key_info;
+	int i, j;
+	u32 h;
+	u32 t;
+
+	*key_num = 0;
+	for (i = 0; i < 16; i++) {
+		h = data[i];
+		t = (h >> 14) & 0xf;
+		for (j = 0; j < info_cb.key_info_len; j++) {
+			if (t == key_info_array[j].value) {
+				kl[*key_num].key_info = &key_info_array[j];
+				kl[*key_num].offset = h & 0x1ff8;
+				kl[*key_num].id = h & 0x7;
+				if (si->retire_list[kl[i].id] == 1)
+					kl[*key_num].retire = 1;
+				else
+					kl[*key_num].retire = 0;
+				(*key_num)++;
+				break;
+			}
+		}
+		if ((data[i] >> 13) & 1)
+			break;
+	}
+}
+
+static int sb_sha(struct sb_info *si, u8 *sec_image, u32 sign_image_size, u8 *digest_ret)
+{
+	switch (si->sha_algo) {
+	case 224:
+		printf("otp verify does not support SHA224\n");
+		return OTP_FAILURE;
+	case 256:
+		sb_sha256(sec_image, sign_image_size, digest_ret);
+		break;
+	case 384:
+		sb_sha384(sec_image, sign_image_size, digest_ret);
+		break;
+	case 512:
+		sb_sha512(sec_image, sign_image_size, digest_ret);
+		break;
+	default:
+		printf("SHA Algorithm is invalid\n");
+		return OTP_FAILURE;
+	}
+	return 0;
+}
+
+static int mode2_verify(u8 *sec_image, u32 sign_image_size,
+			u8 *signature, u8 *rsa_m,
+			int order, u8 *digest,
+			struct sb_info *si)
+{
+	RSA *rsa = NULL;
+	BIGNUM *bn_m = NULL;
+	BIGNUM *bn_e = NULL;
+	u8 rsa_e[3] = "\x01\x00\x01";
+	u8 sign_ret[512];
+	u8 rsa_m_rev[512];
+	u8 signature_rev[512];
+	u8 tmp;
+	u32 rsa_len = si->rsa_algo / 8;
+	int i;
+	int ret;
+
+	bn_m = BN_new();
+	bn_e = BN_new();
+	if (!bn_m || !bn_e) {
+		ret = -1;
+		goto fail;
+	}
+
+	rsa = RSA_new();
+	if (!rsa) {
+		ret = -1;
+		goto fail;
+	}
+
+	if (order == OTP_LIT_END) {
+		memset(rsa_m_rev, 0, 512);
+		memset(signature_rev, 0, 512);
+		for (i = 0; i < rsa_len; i++) {
+			rsa_m_rev[i] = rsa_m[rsa_len - 1 - i];
+			signature_rev[i] = signature[rsa_len - 1 - i];
+		}
+		BN_bin2bn(rsa_m_rev, rsa_len, bn_m);
+		BN_bin2bn(rsa_e, 3, bn_e);
+
+		if (!RSA_set0_key(rsa, BN_dup(bn_m), BN_dup(bn_e), NULL))
+			goto fail;
+
+		ret = RSA_public_decrypt(rsa_len, signature_rev, sign_ret, rsa, RSA_NO_PADDING);
+	} else {
+		BN_bin2bn(rsa_m, rsa_len, bn_m);
+		BN_bin2bn(rsa_e, 3, bn_e);
+
+		if (!RSA_set0_key(rsa, BN_dup(bn_m), BN_dup(bn_e), NULL))
+			goto fail;
+
+		ret = RSA_public_decrypt(rsa_len, signature, sign_ret, rsa, RSA_NO_PADDING);
+	}
+
+	if (ret <= 0) {
+		printf("RSA_public_decrypt error: %d\n", ret);
+		goto fail;
+	}
+
+	if (order == OTP_LIT_END) {
+		for (i = 0; i < rsa_len / 2; i++) {
+			tmp = sign_ret[i];
+			sign_ret[i] = sign_ret[rsa_len - 1 - i];
+			sign_ret[rsa_len - 1 - i] = tmp;
+		}
+		ret = memcmp(digest, sign_ret, si->digest_len);
+	} else {
+		ret = memcmp(digest, sign_ret + (rsa_len - si->digest_len), si->digest_len);
+	}
+fail:
+	BN_free(bn_m);
+	BN_free(bn_e);
+	RSA_free(rsa);
+
+	if (ret)
+		return OTP_FAILURE;
+	return 0;
+}
+
+static int otp_verify_boot_image(uint8_t *sec_image)
+{
+	struct sb_info si;
+	struct key_list kl[16];
+	struct sb_header *sh;
+	u32 data[2048];
+	u8 digest[64];
+	u8 *signature;
+	u8 *key;
+	u32 otp_rid[2];
+	u32 sw_rid[2];
+	u64 *otp_rid64 = (u64 *)otp_rid;
+	u64 *sw_rid64 = (u64 *)sw_rid;
+	int key_num;
+	int ret;
+	int i;
+	int pass = 0;
+
+	otp_read_data_buf(0, 2048, data);
+	parse_data(kl, &key_num, &si, data);
+	if (parse_config(&si))
+		return OTP_FAILURE;
+	otp_read_conf(10, &otp_rid[0]);
+	otp_read_conf(11, &otp_rid[1]);
+
+	sh = (struct sb_header *)(sec_image + si.header_offset);
+	signature = sec_image + sh->signature_offset;
+
+	if (si.secure_region)
+		printf("WARNING: Secure Region is enabled, the verification may not correct.\n");
+
+	if (sh->sign_image_size % 512) {
+		printf("ERROR: The sign_image_size should be 512 bytes aligned\n");
+		return OTP_FAILURE;
+	}
+
+	printf("Check revision ID: ");
+
+	sw_rid[0] = sh->revision_low;
+	sw_rid[1] = sh->revision_high;
+
+	if (*otp_rid64 > *sw_rid64) {
+		printf("FAIL\n");
+		printf("Header revision_low:  %x\n", sh->revision_low);
+		printf("Header revision_high: %x\n", sh->revision_high);
+		printf("OTP revision_low:     %x\n", otp_rid[0]);
+		printf("OTP revision_high:    %x\n", otp_rid[1]);
+		return OTP_FAILURE;
+	}
+	printf("PASS\n");
+
+	printf("Check secure image header: ");
+	if (((sh->aes_data_offset + sh->enc_offset + sh->sign_image_size +
+	      sh->signature_offset + sh->revision_high + sh->revision_low +
+	      sh->reserved + sh->bl1_header_checksum) & 0xffffffff) != 0) {
+		printf("FAIL\n");
+		printf("aes_data_offset:     %x\n", sh->aes_data_offset);
+		printf("enc_offset:          %x\n", sh->enc_offset);
+		printf("sign_image_size:     %x\n", sh->sign_image_size);
+		printf("signature_offset:    %x\n", sh->signature_offset);
+		printf("revision_high:       %x\n", sh->revision_high);
+		printf("revision_low:        %x\n", sh->revision_low);
+		printf("reserved:            %x\n", sh->reserved);
+		printf("bl1_header_checksum: %x\n", sh->bl1_header_checksum);
+		return OTP_FAILURE;
+	}
+	printf("PASS\n");
+
+	ret = sb_sha(&si, sec_image, sh->sign_image_size, digest);
+	if (ret)
+		return OTP_FAILURE;
+
+	printf("Verifying secure image\n");
+	for (i = 0; i < key_num; i++) {
+		if (kl[i].key_info->key_type != OTP_KEY_TYPE_RSA_PUB)
+			continue;
+		printf(" Key %d\n", kl[i].id);
+		if (kl[i].retire) {
+			printf(" Key %d is retired.\n", kl[i].id);
+			continue;
+		}
+		key = (u8 *)data + kl[i].offset;
+		if (!mode2_verify(sec_image, sh->sign_image_size,
+				  signature, key, kl[i].key_info->order, digest, &si)) {
+			pass = 1;
+			break;
+		}
+	}
+	if (pass) {
+		printf("  OEM DSS RSA public keys\n");
+		printf("  ID: %d\n", kl[i].id);
+		if (kl[i].key_info->order == OTP_BIG_END)
+			printf("  Big endian\n");
+		else
+			printf("  Little endian\n");
+		printf("Verify secure image: PASS\n");
+		return OTP_SUCCESS;
+	}
+	printf("Verify secure image: FAIL\n");
 	return OTP_FAILURE;
 }
 
@@ -2503,6 +2980,41 @@ static int do_otpretire(int argc, char *const argv[])
 	return OTP_SUCCESS;
 }
 
+
+static int do_otpverify(int argc, char *const argv[])
+{
+	FILE *fd;
+	char *path;
+	uint8_t *buf;
+	long fsize;
+	int ret;
+
+	if (argc == 2)
+		path = argv[1];
+	else
+		return OTP_USAGE;
+
+
+	fd = fopen(path, "rb");
+	if (!fd) {
+		printf("failed to open %s\n", path);
+		return OTP_FAILURE;
+	}
+	fseek(fd, 0, SEEK_END);
+	fsize = ftell(fd);
+	fseek(fd, 0, SEEK_SET);
+	buf = malloc(fsize + 1);
+	ret = fread(buf, 1, fsize, fd);
+	if (ret != fsize) {
+		printf("Reading \"%s\" failed\n", path);
+		return OTP_FAILURE;
+	}
+	fclose(fd);
+	buf[fsize] = 0;
+
+	return otp_verify_boot_image(buf);
+}
+
 static void usage(void)
 {
 	printf("otp version\n"
@@ -2518,7 +3030,8 @@ static void usage(void)
 	       "otp scuprotect [o] <bit_offset>\n"
 	       "otp update [o] <revision_id>\n"
 	       "otp rid\n"
-	       "otp retire [o] <key_id>\n");
+	       "otp retire [o] <key_id>\n"
+	       "otp verify <secure_image_path>\n");
 }
 
 int main(int argc, char *argv[])
@@ -2640,6 +3153,8 @@ int main(int argc, char *argv[])
 		ret = do_otprid(argc, argv);
 	else if (!strcmp(sub_cmd, "retire"))
 		ret = do_otpretire(argc, argv);
+	else if (!strcmp(sub_cmd, "verify"))
+		ret = do_otpverify(argc, argv);
 	else
 		ret = OTP_USAGE;
 

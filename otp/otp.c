@@ -3055,13 +3055,21 @@ static int do_otpverify(int argc, char *const argv[])
 	}
 	fseek(fd, 0, SEEK_END);
 	fsize = ftell(fd);
+	if (fsize < 0) {
+		fclose(fd);
+		return OTP_FAILURE;
+	}
+
 	fseek(fd, 0, SEEK_SET);
 	buf = malloc(fsize + 1);
 	ret = fread(buf, 1, fsize, fd);
 	if (ret != fsize) {
 		printf("Reading \"%s\" failed\n", path);
+		free(buf);
+		fclose(fd);
 		return OTP_FAILURE;
 	}
+
 	fclose(fd);
 	buf[fsize] = 0;
 

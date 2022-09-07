@@ -22,6 +22,9 @@ executable('i2c-slave-mqueue', 'i2c-slave-mqueue/i2c-slave-mqueue.c', install: t
 # i3c
 executable('i3c-test', 'i3c-test/i3c-test.c', install: true)
 
+# mctp-i3c
+executable('mctp-i3c', 'mctp-i3c/mctp-i3c.c', install: true)
+
 # eSPI
 executable('oob-pch-test', 'espi_test/oob-pch-test.c', install: true)
 

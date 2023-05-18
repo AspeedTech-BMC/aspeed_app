@@ -2,14 +2,15 @@
  * Copyright 2020 Aspeed Technology Inc.
  */
 #include "mem_common.h"
+#include "compiler.h"
 
-int cmd_get_data_size(char* arg, int default_size)
+int cmd_get_data_size(char *arg, int default_size)
 {
-	/* Check for a size specification .b, .w or .l.
+	/* Check for a size specification .b, .w .l or .q.
 	 */
 	int len = strlen(arg);
-	if (len > 2 && arg[len-2] == '.') {
-		switch(arg[len-1]) {
+	if (len > 2 && arg[len - 2] == '.') {
+		switch (arg[len - 1]) {
 		case 'b':
 			return 1;
 		case 'w':
@@ -18,6 +19,10 @@ int cmd_get_data_size(char* arg, int default_size)
 			return 4;
 		case 's':
 			return -2;
+		case 'q':
+			if (MEM_SUPPORT_64BIT_DATA)
+				return 8;
+			/* no break */
 		default:
 			return -1;
 		}

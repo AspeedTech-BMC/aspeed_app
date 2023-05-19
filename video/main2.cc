@@ -18,7 +18,7 @@
 
 #define JPEG_DATA_OFFSET	0x50
 
-static const char opt_short [] = "c:shq:p:a:m:f:t:";
+static const char opt_short [] = "c:shq:p:a:m:f:t:i:";
 static const struct option opt_long [] = {
 	{ "capture",	required_argument,	NULL,	'c' },
 	{ "stream",	no_argument,		NULL,	's' },
@@ -29,6 +29,7 @@ static const struct option opt_long [] = {
 	{ "HQmode",	required_argument,	NULL,	'm' },
 	{ "fps",	required_argument,	NULL,	'f' },
 	{ "test",	required_argument,	NULL,	't' },
+	{ "instance",	required_argument,	NULL,	'i' },
 	{ 0, 0, 0, 0 }
 };
 
@@ -54,6 +55,7 @@ static void print_usage(FILE *fp, int argc, char **argv)
 		" -m | --HQmode     enable HQ mode\n"
 		" -f | --fps        0 for no control; o/w new-fps = org-fps*fps/60 \n"
 		" -t | --test       0 stop/run test;\n"
+		" -i | --instance   device to run;\n"
 		"\n",
 		argv[0]
 		);
@@ -71,7 +73,7 @@ static void save2file(char *data, size_t size, const char *fileName)
 	if (write(fd, data, size) < 0) {
 		printf("%s file write failed\n", fileName);
 	}
-	printf("Save to %s, size %d\n", fileName, size);
+	printf("Save to %s, size %zu\n", fileName, size);
 	close(fd);
 }
 
@@ -156,7 +158,7 @@ static void test0(int times)
 	ikvm::Video *video;
 	int count = 0;
 
-	video = new ikvm::Video("/dev/video0");
+	video = new ikvm::Video();
 	video->start();
 	video->getFrame();
 	if (video->getData() != nullptr) {
@@ -173,12 +175,12 @@ static void test0(int times)
 
 	do {
 		++count;
-		video = new ikvm::Video("/dev/video0");
+		video = new ikvm::Video();
 		video->start();
 		video->getFrame();
 		if (video->getData() != nullptr) {
 			if (length != video->getFrameSize()) {
-				printf("%s failed at %d, length doesn't match(%d<->%d)\n",
+				printf("%s failed at %d, length doesn't match(%zu<->%zu)\n",
 				       __func__, count, length, video->getFrameSize());
 				return;
 			}
@@ -204,7 +206,7 @@ static void test1(ikvm::Video *v)
 	unsigned char *buf = NULL;
 	char data[0x200000];
 	int count = 1;
-	char filename[16];
+	char filename[32];
 
 	printf("In this test, it will load bmp, golden_#.bmp, for test.\n");
 	printf("Please switch video driver to input from memory by sysfs.\n");
@@ -224,7 +226,7 @@ static void test1(ikvm::Video *v)
 	printf("\n-----Test Start-----\n");
 	do {
 		// prepare test data
-		snprintf(filename, 16, "test_%d.bmp", count);
+		snprintf(filename, 32, "test_%d.bmp", count);
 		if (loadBMP(filename, buf, &bmp_w, &bmp_h))
 			break;
 
@@ -235,7 +237,7 @@ static void test1(ikvm::Video *v)
 		}
 
 		// prepare golden data
-		snprintf(filename, 16, "golden_%d.jpg", count);
+		snprintf(filename, 32, "golden_%d.jpg", count);
 		loadFile(data, 0x200000, filename);
 
 		printf("*%3d: ", count);
@@ -245,7 +247,7 @@ static void test1(ikvm::Video *v)
 			if (memcmp(data + JPEG_DATA_OFFSET, v->getData() + JPEG_DATA_OFFSET, v->getFrameSize() - JPEG_DATA_OFFSET) != 0) {
 				rc = -1;
 				printf("NG, data mismatch\n");
-				snprintf(filename, 16, "fail_%d.jpg", count);
+				snprintf(filename, 32, "fail_%d.jpg", count);
 				save2file(v->getData(), v->getFrameSize(), filename);
 			} else
 				printf("OK\n");
@@ -281,16 +283,16 @@ int main_v2(int argc, char **argv) {
 	char opt;
 	uint32_t times = 0, quality = 0, fps = 0;
 	bool is420 = false;
-	int format = false;
+	int format = 0, id = 0;
 	bool hq_enable = false;
 	char *data;
-	char fileName[16];
+	char fileName[32];
 	bool is_streaming = false;
 	size_t frameNumber = 0;
 	ikvm::Video *video;
 	unsigned char *socketbuffer;
 
-	video = new ikvm::Video("/dev/video0");
+	video = new ikvm::Video();
 	while ((opt = getopt_long(argc, argv, opt_short, opt_long, NULL)) != (char) - 1) {
 		switch (opt) {
 			case 'm':
@@ -339,6 +341,10 @@ int main_v2(int argc, char **argv) {
 			case 't':
 				test(video, strtoul(optarg, 0, 10));
 				return 0;
+			case 'i':
+				id = strtoul(optarg, 0, 10);
+				video->setID(id);
+				break;
 			default:
 				print_usage(stdout, argc, argv);
 				return -1;
@@ -354,7 +360,7 @@ int main_v2(int argc, char **argv) {
 		while(1) {
 			if (video->getFrame() == 0) {
 				if ((video->getFrameNumber() != frameNumber + 1) && video->getFrameNumber())
-					printf("%s: discontinuous frame number (%d -> %d)\n",
+					printf("%s: discontinuous frame number (%zu -> %zu)\n",
 					       __func__,  frameNumber, video->getFrameNumber());
 
 				frameNumber = video->getFrameNumber();

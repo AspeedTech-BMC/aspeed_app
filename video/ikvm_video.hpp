@@ -28,7 +28,7 @@ class Video
      * @param[in] p     - Path to the V4L2 video device
      * @param[in] fr    - desired frame rate of the video
      */
-    Video(const std::string& p, int fr = 30, int q = 4, int sub = 0, int fmt = 0);
+    Video(int i = 0, int fr = 30, int q = 4, int sub = 0, int fmt = 0);
     ~Video();
     Video(const Video&) = default;
     Video& operator=(const Video&) = default;
@@ -206,6 +206,11 @@ class Video
         aspeedHQuality = _quality;
     }
 
+    inline void setID(int _id)
+    {
+        instId = _id;
+    }
+
   private:
     /*
      * @brief find v4l2 ctrl-id by the given name
@@ -238,6 +243,7 @@ class Video
         uint32_t sequence;
     };
 
+    int instId;
     /*
      * @brief Boolean to indicate whether the resize was triggered during
      *        the open operation
@@ -268,8 +274,6 @@ class Video
     /* @brief aspeed's hq quality, (1~12)
      */
     bool aspeedHQuality;
-    /* @brief Path to the V4L2 video device */
-    const std::string path;
     /* @brief Streaming buffer storage */
     std::vector<Buffer> buffers;
     /* @brief map of ctrl and its name */

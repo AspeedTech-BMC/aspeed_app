@@ -70,7 +70,7 @@ void *ast_video_mmap_jpeg_addr(void)
 #ifdef VIDEO_DEBUG			
 		printf("video jpeg offset from %ldMB \n", video_jpeg_offset/(1024 * 1024));
 #endif		
-		video_jpeg_addr = video_stream_addr + video_jpeg_offset;
+		video_jpeg_addr = (char *)video_stream_addr + video_jpeg_offset;
 		return video_jpeg_addr;
 	}
 }

@@ -17,19 +17,17 @@
 #include <string.h>
 #include <iostream>
 
+#define DEV_NAME "/dev/video"
 
 
 namespace ikvm
-{
-
-Video::Video(const std::string& p, int fr, int q, int sub, int fmt) :
-    resizeAfterOpen(false), timingsError(false), fd(-1), frameRate(fr),
-    lastFrameIndex(-1), height(600), width(800),
-    jpegQuality(q), jpegSubSampling(sub), format(fmt), aspeedHQMode(false),
-    path(p), input(0), dbg_width(0), dbg_height(0)
+{ Video::Video(int i, int fr, int q, int sub, int fmt) : instId(i), resizeAfterOpen(false), timingsError(false), fd(-1), frameRate(fr), lastFrameIndex(-1), height(600), width(800), jpegQuality(q), jpegSubSampling(sub), format(fmt), aspeedHQMode(false),
+    input(0), dbg_width(0), dbg_height(0)
 {
     v4l2_queryctrl qctrl;
+    std::string path;
 
+    path = std::string(DEV_NAME) + std::to_string(instId);
     fd = open(path.c_str(), O_RDWR);
     if (fd < 0)
     {
@@ -243,13 +241,13 @@ bool Video::needsResize()
 
     if (timings.bt.width != width || timings.bt.height != height)
     {
-        pr_dbg("timing old(%dx%d) new(%dx%d)\n", width, height, timings.bt.width, timings.bt.height);
+        pr_dbg("timing old(%zux%zu) new(%dx%d)\n", width, height, timings.bt.width, timings.bt.height);
         width = timings.bt.width;
         height = timings.bt.height;
 
         if (!width || !height)
         {
-            pr_dbg("Failed to get new resolution WIDTH=%d, HEIGHT=%d\n", width, height);
+            pr_dbg("Failed to get new resolution WIDTH=%zu, HEIGHT=%zu\n", width, height);
         }
 
         lastFrameIndex = -1;
@@ -404,6 +402,9 @@ int Video::start()
     v4l2_streamparm sparm;
     v4l2_control ctrl;
     v4l2_input input;
+    std::string path;
+
+    path = std::string(DEV_NAME) + std::to_string(instId);
 
     if (fd >= 0)
     {

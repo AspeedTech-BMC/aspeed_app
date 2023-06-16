@@ -182,7 +182,7 @@ void Video::setInputSize(int width, int height)
 
 void Video::getInputBuffer(unsigned char **addr)
 {
-    *addr = (unsigned char *)mmap(NULL, width * height * 4, PROT_READ | PROT_WRITE,
+    *addr = (unsigned char *)mmap(NULL, width * height * 4, PROT_WRITE,
                                   MAP_SHARED, fd, 0);
     if (*addr == MAP_FAILED) {
         pr_dbg("mmap buffer for bmp isn't ready!!\n");

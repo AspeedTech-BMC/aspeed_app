@@ -117,7 +117,7 @@ int ast_jtag_run_test_idle(unsigned char end, unsigned int tck)
 	struct jtag_tap_state run_idle;
 	__u8 execute_tck;
 
-	while (tck) {
+	do {
 		execute_tck = tck > 0xff ? 0xff : tck;
 		run_idle.from = JTAG_STATE_CURRENT;
 		run_idle.reset = JTAG_NO_RESET;
@@ -134,7 +134,7 @@ int ast_jtag_run_test_idle(unsigned char end, unsigned int tck)
 			return -1;
 		}
 		tck -= execute_tck;
-	}
+	} while (tck);
 
 //	if(end)
 //		usleep(3000);

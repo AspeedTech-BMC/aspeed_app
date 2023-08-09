@@ -44,3 +44,7 @@ executable('svf', ['svf/main.c', 'svf/ast-jtag.c', 'svf/svf.c'], install: true)
 # otp
 executable('otp', 'otp/otp.c', install: true, dependencies: dependency('openssl'),
     include_directories: include_directories('otp'))
+
+# usb
+executable('hid_gadget_app', 'usb/hid_gadget_test.c', install: true)
+

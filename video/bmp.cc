@@ -384,7 +384,7 @@ int loadBMP( const char *filename, unsigned char *buf, int *width, int *height )
 	//	fclose( file );
 	//	return 1;
 	//}
-	memset( buf, 0x00, info_header.width * info_header.height * 4 );
+	//memset( buf, 0x00, info_header.width * info_header.height * 4 );
 
 	/* load image data */
 	fseek( file, file_header.offset, SEEK_SET );

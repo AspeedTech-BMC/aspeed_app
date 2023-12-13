@@ -29,7 +29,7 @@ executable('mctp-i3c', 'mctp-i3c/mctp-i3c.c', install: true)
 executable('oob-pch-test', 'espi_test/oob-pch-test.c', install: true)
 
 # mctp
-executable('mctp', ['mctp/mctp.c', 'mctp/libmctp.c'], install: true,
+executable('mctp-ast', ['mctp/mctp.c', 'mctp/libmctp.c'], install: true,
     include_directories: include_directories('mctp'), dependencies: thread_dep)
 
 # mem_utils

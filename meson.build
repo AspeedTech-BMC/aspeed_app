@@ -25,6 +25,10 @@ executable('i3c-test', 'i3c-test/i3c-test.c', install: true)
 # mctp-i3c
 executable('mctp-i3c', 'mctp-i3c/mctp-i3c.c', install: true)
 
+# mctp-socket
+executable('mctp-skt-req', 'mctp-socket/mctp-req.c', 'mctp-socket/mctp-util.c', install: true)
+executable('mctp-skt-recv', 'mctp-socket/mctp-recv.c', install: true)
+
 # eSPI
 executable('oob-pch-test', 'espi_test/oob-pch-test.c', install: true)
 

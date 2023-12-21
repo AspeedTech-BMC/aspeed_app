@@ -473,6 +473,7 @@ int main(int argc, char *argv[])
 				break;
 		}
 	}
+	wait_for_xfer_done(astpcie);
 
 	aspeed_mctp_free(astpcie);
 	if (!xfer_dir)

@@ -96,6 +96,18 @@ void wait_for_message(struct mctp_binding_astpcie *astpcie)
 	}
 }
 
+void wait_for_xfer_done(struct mctp_binding_astpcie *astpcie)
+{
+	int rc;
+	bool xfered = false;
+
+	while (!xfered) {
+		rc = aspeed_mctp_poll(astpcie, 1000);
+		if (rc & POLLOUT)
+			xfered = true;
+	}
+}
+
 int aspeed_mctp_register_default_handler(struct mctp_binding_astpcie *astpcie)
 {
 	return ioctl(astpcie->fd, ASPEED_MCTP_IOCTL_REGISTER_DEFAULT_HANDLER);

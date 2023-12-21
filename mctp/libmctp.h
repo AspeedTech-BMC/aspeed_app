@@ -162,6 +162,7 @@ struct mctp_binding_astpcie {
 
 void mctp_swap_pcie_vdm_hdr(struct aspeed_mctp_xfer *data);
 void wait_for_message(struct mctp_binding_astpcie *astpcie);
+void wait_for_xfer_done(struct mctp_binding_astpcie *astpcie);
 struct mctp_binding_astpcie *aspeed_mctp_init(char *dev);
 void aspeed_mctp_free(struct mctp_binding_astpcie *astpcie);
 int aspeed_mctp_send(struct mctp_binding_astpcie *astpcie,

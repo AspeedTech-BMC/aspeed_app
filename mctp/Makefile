@@ -7,7 +7,7 @@ endif
 CFLAGS += -Wall -O2 
 LIBS 	= -ldl
 OBJS	=  libmctp.o mctp.o
-EXE	= mctp
+EXE	= mctp-ast
 CC      = $(CROSS_COMPILE)gcc
 
 $(EXE): $(OBJS)

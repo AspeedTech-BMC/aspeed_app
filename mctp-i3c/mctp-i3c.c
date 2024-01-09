@@ -40,9 +40,10 @@ struct i3c_mctp_packet {
 	__u32 size;
 };
 
-const char *sopts = "d:rw:h";
+const char *sopts = "d:prw:h";
 static const struct option lopts[] = {
 	{"device",		required_argument,	NULL,	'd' },
+	{"pec",		        no_argument,            NULL,	'p' },
 	{"read",		no_argument,		NULL,	'r' },
 	{"write",		required_argument,	NULL,	'w' },
 	{"command",		required_argument,	NULL,	'c' },
@@ -54,9 +55,33 @@ static void print_usage(const char *name)
 	fprintf(stderr, "usage: %s options...\n", name);
 	fprintf(stderr, "  options:\n");
 	fprintf(stderr, "    -d --device       <dev>          device to use.\n");
+	fprintf(stderr, "    -p --pec                         append pec.\n");
 	fprintf(stderr, "    -r --read                        read mctp packet.\n");
 	fprintf(stderr, "    -w --write        <data block>   send mctp packet.\n");
 	fprintf(stderr, "    -h --help                        Output usage message and exit.\n");
+}
+
+static bool cal_pec;
+
+uint8_t crc8(uint8_t crc, const uint8_t *data, uint8_t len)
+{
+	int i, j;
+
+	if (!data)
+		return crc;
+
+	for (i = 0; i < len; ++i) {
+		crc ^= data[i];
+
+		for (j = 0; j < 8; ++j) {
+			if ((crc & 0x80) != 0)
+				crc = (uint8_t)((crc << 1) ^ 0x07);
+			else
+				crc <<= 1;
+		}
+	}
+
+	return crc;
 }
 
 static int rx_args_to_xfer(struct i3c_mctp_xfer *xfer)
@@ -80,14 +105,34 @@ static int w_args_to_xfer(struct i3c_mctp_xfer *xfer, char *arg)
 	data_ptrs[i] = strtok(arg, ",");
 	while (data_ptrs[i] && i < 255)
 		data_ptrs[++i] = strtok(NULL, ",");
-	tmp = (uint8_t *)calloc(i, sizeof(uint8_t));
-	if (!tmp)
-		return -1;
-	for (len = 0; len < i; len++)
-		tmp[len] = (uint8_t)strtol(data_ptrs[len], NULL, 0);
+
+	if (cal_pec) {
+		int buf_size = i;
+		uint8_t pec, addr = ((0x08 << 1) | 0x01);
+
+		buf_size++;
+
+		tmp = (uint8_t *)calloc(buf_size, sizeof(uint8_t));
+		if (!tmp)
+			return -1;
+
+		for (len = 0; len < i; len++)
+			tmp[len] = (uint8_t)strtol(data_ptrs[len], NULL, 0);
+
+		pec = crc8(0, &addr, 1);
+		pec = crc8(pec, tmp, len);
+		tmp[len++] = pec;
+	} else {
+		tmp = (uint8_t *)calloc(i, sizeof(uint8_t));
+		if (!tmp)
+			return -1;
+		for (len = 0; len < i; len++)
+			tmp[len] = (uint8_t)strtol(data_ptrs[len], NULL, 0);
+	}
 	xfer->rnw = 0;
 	xfer->len = len;
 	xfer->data = (__u32 *)tmp;
+
 	return 0;
 }
 
@@ -217,6 +262,8 @@ int main(int argc, char *argv[])
 		case 'd':
 			device = optarg;
 			break;
+		case 'p':
+			cal_pec = true;
 		case 'r':
 		case 'w':
 			nxfers++;
@@ -228,6 +275,7 @@ int main(int argc, char *argv[])
 	}
 	if (!device)
 		exit(EXIT_FAILURE);
+
 	file = open(device, O_RDWR);
 	if (file < 0)
 		exit(EXIT_FAILURE);
@@ -241,6 +289,7 @@ int main(int argc, char *argv[])
 		switch (opt) {
 		case 'h':
 		case 'd':
+		case 'p':
 			break;
 		case 'r':
 			if (rx_args_to_xfer(&xfers[nxfers])) {

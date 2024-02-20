@@ -3110,6 +3110,7 @@ static void usage(void)
 	       "otp info strap [v]\n"
 	       "otp info conf [otp_dw_offset]\n"
 	       "otp info scu\n"
+	       "otp info key\n"
 	       "otp prog [o] <image_path>\n"
 	       "otp pb conf|data [o] <otp_dw_offset> <bit_offset> <value>\n"
 	       "otp pb strap [o] <bit_offset> <value>\n"

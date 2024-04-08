@@ -16,6 +16,7 @@
 #include <string.h>
 #include <sys/ioctl.h>
 #include <poll.h>
+#include <time.h>
 #include <linux/types.h>
 #include <sys/stat.h>
 
@@ -30,6 +31,18 @@ struct i3c_mctp_xfer {
 	__u8 pad[5];
 };
 
+struct mctp_header {
+	__u8	msg_tag: 3;
+	__u8	to: 1;
+	__u8	pkt_seq: 2;
+	__u8	eom: 1;
+	__u8	som: 1;
+	__u8	src_eid;
+	__u8	dest_eid;
+	__u8	header_ver: 4;
+	__u8	rsvd: 4;
+};
+
 struct i3c_mctp_packet_data {
 	__u8 protocol_hdr[I3C_MCTP_HDR_SIZE];
 	__u8 payload[I3C_MCTP_PAYLOAD_SIZE];
@@ -40,13 +53,18 @@ struct i3c_mctp_packet {
 	__u32 size;
 };
 
-const char *sopts = "d:prw:h";
+static int read_timeout_ms = 10000;
+
+const char *sopts = "d:rw:t:v:c:m:h";
 static const struct option lopts[] = {
 	{"device",		required_argument,	NULL,	'd' },
 	{"pec",		        no_argument,            NULL,	'p' },
 	{"read",		no_argument,		NULL,	'r' },
 	{"write",		required_argument,	NULL,	'w' },
-	{"command",		required_argument,	NULL,	'c' },
+	{"test",		optional_argument,	NULL,	't' },
+	{"verify",		optional_argument,	NULL,	'v' },
+	{"continue",		optional_argument,	NULL,	'c' },
+	{"ms",			required_argument,	NULL,	'm' },
 	{"help",		no_argument,		NULL,	'h' },
 	{0, 0, 0, 0}
 };
@@ -58,6 +76,10 @@ static void print_usage(const char *name)
 	fprintf(stderr, "    -p --pec                         append pec.\n");
 	fprintf(stderr, "    -r --read                        read mctp packet.\n");
 	fprintf(stderr, "    -w --write        <data block>   send mctp packet.\n");
+	fprintf(stderr, "    -t --test         <length>       send test pattern.\n");
+	fprintf(stderr, "    -v --verify       <length>	      verify the test pattern.\n");
+	fprintf(stderr, "    -c --continue     <num>          0: infinity loop, n: loop count\n");
+	fprintf(stderr, "    -m --ms           <ms>           read wait in ms, 0: wait forever\n");
 	fprintf(stderr, "    -h --help                        Output usage message and exit.\n");
 }
 
@@ -96,6 +118,7 @@ static int rx_args_to_xfer(struct i3c_mctp_xfer *xfer)
 	xfer->data = (__u32 *)tmp;
 	return 0;
 }
+
 static int w_args_to_xfer(struct i3c_mctp_xfer *xfer, char *arg)
 {
 	char *data_ptrs[256];
@@ -190,20 +213,19 @@ static int i3c_mctp_poll(int fd, int timeout)
 
 		return -1;
 	}
-
-	return 0;
+	return rc;
 }
 
-void wait_for_message(int fd)
+int wait_for_message(int fd)
 {
 	int rc;
-	bool received = false;
 
-	while (!received) {
-		rc = i3c_mctp_poll(fd, 1000);
-		if (rc & POLLIN)
-			received = true;
+	rc = i3c_mctp_poll(fd, read_timeout_ms);
+	if (rc == 0) {
+		errno = ETIMEDOUT;
+		return -1;
 	}
+	return 0;
 }
 
 int i3c_mctp_recv(int fd, struct i3c_mctp_xfer *xfer)
@@ -234,7 +256,9 @@ int i3c_mctp_priv_xfer(int fd, struct i3c_mctp_xfer *xfer)
 	int ret;
 
 	if (xfer->rnw) {
-		wait_for_message(fd);
+		ret = wait_for_message(fd);
+		if (ret < 0)
+			return ret;
 		ret = i3c_mctp_recv(fd, xfer);
 	} else {
 		ret = i3c_mctp_send(fd, xfer);
@@ -242,17 +266,247 @@ int i3c_mctp_priv_xfer(int fd, struct i3c_mctp_xfer *xfer)
 	return ret;
 }
 
+static int send_test_pattern(int file, int length)
+{
+	struct i3c_mctp_xfer *xfers, *xfer;
+	struct i3c_mctp_packet_data *packet;
+	struct mctp_header *header;
+	unsigned char *payload;
+	unsigned char pattern = 0;
+	unsigned char sed = 0;
+	int i, xfer_index = 0, payload_index, nxfers;
+	unsigned int remain_xfer = length;
+
+	pattern = rand();
+	sed = 0x01;
+
+	nxfers = (length + (I3C_MCTP_PAYLOAD_SIZE - 1)) / I3C_MCTP_PAYLOAD_SIZE;
+
+	xfers = (struct i3c_mctp_xfer *)calloc(nxfers, sizeof(*xfers));
+	if (!xfers)
+		return -1;
+	packet = calloc(nxfers, sizeof(struct i3c_mctp_packet_data));
+	if (!packet)
+		return -1;
+	header = (struct mctp_header *)packet[xfer_index].protocol_hdr;
+
+	header->msg_tag = 0;
+	header->to = 0;
+	header->pkt_seq = 0;
+	header->src_eid = 0;
+	header->som = 1;
+	header->dest_eid = 0;
+	header->header_ver = 0x1;
+	payload = packet[xfer_index].payload;
+	payload[0] = 0x1;
+	payload[1] = 0x2;
+	payload[2] = 0x3;
+	payload[3] = 0x4;
+
+	for (i = 4; i < 10; i++)
+		payload[i] = 0x5a;
+
+	payload[10] = 0;
+	payload[11] = 0;
+	payload[12] = 0;
+	payload[13] = 0;
+	payload[14] = sed;
+	payload[15] = pattern;
+
+	while (remain_xfer > I3C_MCTP_PAYLOAD_SIZE) {
+		header->eom = 0;
+		payload_index = header->som ? 17 : 1;
+		payload[payload_index - 1] = (pattern + sed) % 0xff;
+		for (; payload_index < I3C_MCTP_PAYLOAD_SIZE; payload_index++)
+			payload[payload_index] =
+				(payload[payload_index - 1] + sed) % 0xff;
+		xfer = &xfers[xfer_index];
+		xfer->rnw = 0;
+		xfer->len = sizeof(struct i3c_mctp_packet_data);
+		xfer->data = (__u32 *)&packet[xfer_index];
+		xfer_index++;
+		memcpy(packet[xfer_index].protocol_hdr, header,
+		       I3C_MCTP_HDR_SIZE);
+		header = (struct mctp_header *)packet[xfer_index].protocol_hdr;
+		header->som = 0;
+		header->pkt_seq += 1;
+		pattern = payload[I3C_MCTP_PAYLOAD_SIZE - 1] % 0xff;
+		remain_xfer -= I3C_MCTP_PAYLOAD_SIZE;
+		payload = packet[xfer_index].payload;
+	}
+
+	if (remain_xfer) {
+		header->eom = 1;
+		payload_index = header->som ? 17 : 1;
+		payload[payload_index - 1] = (pattern + sed) % 0xff;
+		for (; payload_index < remain_xfer; payload_index++)
+			payload[payload_index] =
+				(payload[payload_index - 1] + sed) % 0xff;
+
+		xfer = &xfers[xfer_index];
+		xfer->rnw = 0;
+		xfer->len = I3C_MCTP_HDR_SIZE + remain_xfer;
+		xfer->data = (__u32 *)&packet[xfer_index];
+	}
+
+	for (i = 0; i < nxfers; i++) {
+		if (i3c_mctp_priv_xfer(file, &xfers[i]) < 0) {
+			fprintf(stderr, "Error: transfer failed: %s\n", strerror(errno));
+			return -1;
+		}
+	}
+	free(xfers);
+	free(packet);
+
+	return 0;
+}
+
+static int verify_test_pattern(int file)
+{
+	struct i3c_mctp_xfer *xfer;
+	struct i3c_mctp_packet *packet;
+	struct mctp_header *header;
+	unsigned char *payload;
+	unsigned char *rx_tmp;
+	unsigned char sed = 0;
+	unsigned char pattern = 0;
+	int cmp_err = 0;
+	int mctp_seq_num = 0;
+	int mctp_tag = 0;
+	int i;
+
+	xfer = (struct i3c_mctp_xfer *)malloc(sizeof(*xfer));
+	if (!xfer)
+		return -1;
+	rx_tmp = (uint8_t *)malloc(MCTP_BTU);
+	if (!rx_tmp) {
+		free(xfer);
+		return -1;
+	}
+	packet = malloc(sizeof(struct i3c_mctp_packet));
+	if (!packet) {
+		free(xfer);
+		free(rx_tmp);
+		return -1;
+	}
+	xfer->rnw = 1;
+	xfer->len = MCTP_BTU;
+	xfer->data = (__u32 *)rx_tmp;
+
+	while (1) {
+		if (i3c_mctp_priv_xfer(file, xfer) < 0) {
+			fprintf(stderr, "Error: Read failed: %s\n",
+				strerror(errno));
+			return -1;
+		}
+
+		memcpy(packet, (void *)(uintptr_t)xfer->data,
+		       xfer->len * sizeof(uint8_t));
+		packet->size = xfer->len;
+		header = (struct mctp_header *)packet->data.protocol_hdr;
+		if (!packet->size)
+			return -1;
+		payload = packet->data.payload;
+
+		if (header->som) {
+			mctp_tag = header->msg_tag;
+			mctp_seq_num = header->pkt_seq;
+			if (!header->eom) {
+				mctp_seq_num++;
+				mctp_seq_num &= 0x3;
+			}
+			if (payload[0] != 0x1 || payload[1] != 0x2 ||
+			    payload[2] != 0x3 || payload[3] != 0x4)
+				cmp_err = 1;
+
+			for (i = 4; i < 10; i++)
+				if (payload[i] != 0x5a)
+					cmp_err = 1;
+
+			for (i = 10; i < 14; i++)
+				if (payload[i] != 0x0)
+					cmp_err = 1;
+
+			if (cmp_err) {
+				printf("\nHEADER Error !!\n");
+				packet_dump(packet);
+				return -1;
+			}
+
+			sed = payload[14];
+			pattern = payload[15];
+
+			for (i = 16; i < packet->size - I3C_MCTP_HDR_SIZE;
+			     i++) {
+				if (payload[i] !=
+				    ((payload[i - 1] + sed) % 0xff)) {
+					cmp_err = 1;
+					break;
+				}
+			}
+			if (cmp_err) {
+				printf("\nPayload Error!!\n");
+				packet_dump(packet);
+				return -1;
+			}
+			pattern = payload[i - 1] % 0xff;
+		} else {
+			if (mctp_tag != header->msg_tag) {
+				printf("mctp tag error expected:%x received:%x\n",
+				       mctp_tag, header->msg_tag);
+				cmp_err = 1;
+				packet_dump(packet);
+				return -1;
+			}
+			if (mctp_seq_num != header->pkt_seq) {
+				printf("mctp seq error mctp_seq_num %d , header->pkt_seq %d\n",
+				       mctp_seq_num, header->pkt_seq);
+				cmp_err = 1;
+				packet_dump(packet);
+				return -1;
+			}
+			mctp_seq_num++;
+			mctp_seq_num &= 0x3;
+			if (payload[0] != (pattern + sed) % 0xff)
+				cmp_err = 1;
+			for (i = 1; i < packet->size - I3C_MCTP_HDR_SIZE; i++) {
+				if (payload[i] !=
+				    ((payload[i - 1] + sed) % 0xff)) {
+					cmp_err = 1;
+					break;
+				}
+			}
+			pattern = payload[i - 1] % 0xff;
+			if (cmp_err) {
+				printf("\nPayload Error!!\n");
+				packet_dump(packet);
+				return -1;
+			}
+		}
+
+		if (header->eom)
+			break;
+	}
+
+	free(xfer);
+	free(rx_tmp);
+	free(packet);
+	return 0;
+}
 int main(int argc, char *argv[])
 {
 	struct i3c_mctp_xfer *xfers;
-	int file, ret, opt, i;
+	int file, ret, opt, i, count = 1;
+	bool infinity_loop = 0, send_with_test_pattern = 0, rx_with_test_pattern = 0;
 	int nxfers = 0;
+	int length = 64;
 	char *device = NULL;
 
 	if (!argv[1]) {
 		print_usage(argv[0]);
 		exit(EXIT_FAILURE);
 	}
+	srand(time(NULL));
 
 	while ((opt = getopt_long(argc, argv,  sopts, lopts, NULL)) != EOF) {
 		switch (opt) {
@@ -268,17 +522,58 @@ int main(int argc, char *argv[])
 		case 'w':
 			nxfers++;
 			break;
+		case 'c':
+			count = strtoul(optarg, 0, 0);
+			if (count == 0)
+				infinity_loop = 1;
+			break;
+		case 't':
+			send_with_test_pattern = 1;
+			length = strtoul(optarg, 0, 0);
+			break;
+		case 'v':
+			rx_with_test_pattern = 1;
+			length = strtoul(optarg, 0, 0);
+			break;
+		case 'm':
+			read_timeout_ms = strtoul(optarg, 0, 0);
+			if (!read_timeout_ms)
+				read_timeout_ms = -1;
+			break;
 		default:
 			print_usage(argv[0]);
 			exit(EXIT_FAILURE);
 		}
 	}
-	if (!device)
-		exit(EXIT_FAILURE);
-
 	file = open(device, O_RDWR);
-	if (file < 0)
+	if (file < 0) {
+		printf("Can't open %s ret = %d\n", device, file);
 		exit(EXIT_FAILURE);
+	}
+	if (send_with_test_pattern) {
+		while (1) {
+			if (send_test_pattern(file, length) < 0)
+				exit(EXIT_FAILURE);
+			if (verify_test_pattern(file) < 0)
+				exit(EXIT_FAILURE);
+			if (!infinity_loop && !(--count))
+				break;
+		}
+		exit(EXIT_SUCCESS);
+	}
+
+	if (rx_with_test_pattern) {
+		while (1) {
+			if (verify_test_pattern(file) < 0)
+				exit(EXIT_FAILURE);
+			if (send_test_pattern(file, length) < 0)
+				exit(EXIT_FAILURE);
+			if (!infinity_loop && !(--count))
+				break;
+		}
+		exit(EXIT_SUCCESS);
+	}
+
 	xfers = (struct i3c_mctp_xfer *)calloc(nxfers, sizeof(*xfers));
 	if (!xfers)
 		exit(EXIT_FAILURE);
@@ -309,15 +604,19 @@ int main(int argc, char *argv[])
 			break;
 		}
 	}
-	for (i = 0; i < nxfers; i++) {
-		if (i3c_mctp_priv_xfer(file, &xfers[i]) < 0) {
-			fprintf(stderr, "Error: transfer failed: %s\n", strerror(errno));
-			ret = EXIT_FAILURE;
-			goto err_free;
+	while (1) {
+		for (i = 0; i < nxfers; i++) {
+			if (i3c_mctp_priv_xfer(file, &xfers[i]) < 0) {
+				fprintf(stderr, "Error: transfer failed: %s\n", strerror(errno));
+				ret = EXIT_FAILURE;
+				goto err_free;
+			}
+			fprintf(stdout, "Success on message %d\n", i);
+			if (xfers[i].rnw)
+				print_rx_data(&xfers[i]);
 		}
-		fprintf(stdout, "Success on message %d\n", i);
-		if (xfers[i].rnw)
-			print_rx_data(&xfers[i]);
+		if (!infinity_loop && !(--count))
+			break;
 	}
 	ret = EXIT_SUCCESS;
 err_free:

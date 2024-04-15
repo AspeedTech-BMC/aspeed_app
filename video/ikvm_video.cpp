@@ -462,7 +462,18 @@ int Video::start()
         pr_dbg("Failed to query video device format ERROR=%s\n", strerror(errno));
     }
 
-    fmt.fmt.pix.pixelformat = format ? V4L2_PIX_FMT_AJPG : V4L2_PIX_FMT_JPEG;
+    switch (format) {
+        case 2:
+            fmt.fmt.pix.flags = V4L2_PIX_FMT_FLAG_PARTIAL_JPG;
+            break;
+        default:
+        case 0:
+            fmt.fmt.pix.pixelformat = V4L2_PIX_FMT_JPEG;
+            break;
+        case 1:
+            fmt.fmt.pix.pixelformat = V4L2_PIX_FMT_AJPG;
+            break;
+    }
     rc = ioctl(fd, VIDIOC_S_FMT, &fmt);
     if (rc < 0)
     {

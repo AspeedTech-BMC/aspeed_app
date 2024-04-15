@@ -10,7 +10,7 @@
 
 #define pr_dbg(fmt, args...) printf("%s(): " fmt, __func__, ## args)
 #define V4L2_PIX_FMT_AJPG     v4l2_fourcc('A', 'J', 'P', 'G')
-
+#define V4L2_PIX_FMT_FLAG_PARTIAL_JPG   0x00000004
 
 namespace ikvm
 {

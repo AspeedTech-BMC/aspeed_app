@@ -351,7 +351,7 @@ static int send_test_pattern(int file, int length)
 
 	for (i = 0; i < nxfers; i++) {
 		if (i3c_mctp_priv_xfer(file, &xfers[i]) < 0) {
-			fprintf(stderr, "Error: transfer failed: %s\n", strerror(errno));
+			fprintf(stdout, "Error: transfer failed: %s\n", strerror(errno));
 			return -1;
 		}
 	}
@@ -395,7 +395,7 @@ static int verify_test_pattern(int file)
 
 	while (1) {
 		if (i3c_mctp_priv_xfer(file, xfer) < 0) {
-			fprintf(stderr, "Error: Read failed: %s\n",
+			fprintf(stdout, "Error: Read failed: %s\n",
 				strerror(errno));
 			return -1;
 		}
@@ -559,6 +559,7 @@ int main(int argc, char *argv[])
 			if (!infinity_loop && !(--count))
 				break;
 		}
+		fprintf(stdout, "PASS\n");
 		exit(EXIT_SUCCESS);
 	}
 
@@ -571,6 +572,7 @@ int main(int argc, char *argv[])
 			if (!infinity_loop && !(--count))
 				break;
 		}
+		fprintf(stdout, "PASS\n");
 		exit(EXIT_SUCCESS);
 	}
 
@@ -607,7 +609,7 @@ int main(int argc, char *argv[])
 	while (1) {
 		for (i = 0; i < nxfers; i++) {
 			if (i3c_mctp_priv_xfer(file, &xfers[i]) < 0) {
-				fprintf(stderr, "Error: transfer failed: %s\n", strerror(errno));
+				fprintf(stdout, "Error: transfer failed: %s\n", strerror(errno));
 				ret = EXIT_FAILURE;
 				goto err_free;
 			}

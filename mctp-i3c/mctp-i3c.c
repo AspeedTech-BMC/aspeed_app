@@ -58,7 +58,6 @@ static int read_timeout_ms = 10000;
 const char *sopts = "d:rw:t:v:c:m:h";
 static const struct option lopts[] = {
 	{"device",		required_argument,	NULL,	'd' },
-	{"pec",		        no_argument,            NULL,	'p' },
 	{"read",		no_argument,		NULL,	'r' },
 	{"write",		required_argument,	NULL,	'w' },
 	{"test",		optional_argument,	NULL,	't' },
@@ -73,16 +72,16 @@ static void print_usage(const char *name)
 	fprintf(stderr, "usage: %s options...\n", name);
 	fprintf(stderr, "  options:\n");
 	fprintf(stderr, "    -d --device       <dev>          device to use.\n");
-	fprintf(stderr, "    -p --pec                         append pec.\n");
 	fprintf(stderr, "    -r --read                        read mctp packet.\n");
 	fprintf(stderr, "    -w --write        <data block>   send mctp packet.\n");
 	fprintf(stderr, "    -t --test         <length>       send test pattern.\n");
-	fprintf(stderr, "    -v --verify       <length>	      verify the test pattern.\n");
+	fprintf(stderr, "    -v --verify       <length>       verify the test pattern.\n");
 	fprintf(stderr, "    -c --continue     <num>          0: infinity loop, n: loop count\n");
 	fprintf(stderr, "    -m --ms           <ms>           read wait in ms, 0: wait forever\n");
 	fprintf(stderr, "    -h --help                        Output usage message and exit.\n");
 }
 
+/*TODO: Find the method to get the device address*/
 static bool cal_pec;
 
 uint8_t crc8(uint8_t crc, const uint8_t *data, uint8_t len)
@@ -516,8 +515,6 @@ int main(int argc, char *argv[])
 		case 'd':
 			device = optarg;
 			break;
-		case 'p':
-			cal_pec = true;
 		case 'r':
 		case 'w':
 			nxfers++;

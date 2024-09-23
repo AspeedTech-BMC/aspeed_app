@@ -18,7 +18,7 @@
 #include <openssl/sha.h>
 #include <openssl/rsa.h>
 #include "aspeed-otp.h"
-#include "otp_info.h"
+#include "otp_info_ast2600.h"
 
 #define OTP_VER				"2.0.0"
 

@@ -5,9 +5,14 @@ endif
 endif
 
 CFLAGS += -Wall -Werror -lcrypto
-OBJS = otp.o sha256.o
-EXE	= otp
+ifeq ($(ARCH),arm)
+	OBJS = otp_ast2600.o
+endif
+ifeq ($(ARCH),arm64)
+	OBJS = otp_ast2700.o
+endif
 
+EXE	= otp_app
 CC      = $(CROSS_COMPILE)gcc
 
 .c.o:

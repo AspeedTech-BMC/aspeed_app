@@ -46,7 +46,7 @@ executable('spw', ['mem_utils/spw.c', 'mem_utils/mem_common.c'], install: true)
 executable('svf', ['svf/main.c', 'svf/ast-jtag.c', 'svf/svf.c'], install: true)
 
 # otp
-executable('otp', 'otp/otp.c', install: true, dependencies: dependency('openssl'),
+executable('otp', 'otp/otp_ast2600.c', install: true, dependencies: dependency('openssl'),
     include_directories: include_directories('otp'))
 
 # usb

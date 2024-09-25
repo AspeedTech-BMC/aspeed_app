@@ -9,7 +9,7 @@ ifeq ($(ARCH),arm)
 	OBJS = otp_ast2600.o
 endif
 ifeq ($(ARCH),arm64)
-	OBJS = otp_ast2700.o
+	OBJS = otp_ast2700.o lib_otp_ast2700.o
 endif
 
 EXE	= otp_app

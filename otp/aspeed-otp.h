@@ -8,6 +8,7 @@
 
 #include <linux/ioctl.h>
 #include <linux/types.h>
+#include <stdint.h>
 
 struct otp_read {
 	unsigned int offset;

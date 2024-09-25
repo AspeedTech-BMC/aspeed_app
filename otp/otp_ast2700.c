@@ -19,8 +19,6 @@
 #include "otp_ast2700.h"
 #include "otp_info_ast2700.h"
 
-struct otp_info_cb info_cb;
-
 static uint32_t chip_version(void)
 {
 	struct otp_revid revid;

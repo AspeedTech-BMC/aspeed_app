@@ -10,6 +10,8 @@
 #include "aspeed-otp.h"
 #include "otp_ast2700.h"
 
+struct otp_info_cb info_cb;
+
 int confirm_yesno(void)
 {
 	int i;

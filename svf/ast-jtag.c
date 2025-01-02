@@ -142,7 +142,7 @@ int ast_jtag_run_test_idle(unsigned char end, unsigned int tck)
 	return 0;
 }
 
-int ast_jtag_xfer(unsigned char endsts, unsigned int len, unsigned int *out, unsigned int *in, enum jtag_xfer_type type)
+int ast_jtag_xfer(unsigned char endsts, unsigned int len, const uint8_t *out, uint8_t *in, enum jtag_xfer_type type)
 {
 	int 	retval;
 	enum jtag_tapstate current_state;
@@ -156,7 +156,7 @@ int ast_jtag_xfer(unsigned char endsts, unsigned int len, unsigned int *out, uns
 	xfer.endstate = endsts;
 	xfer.padding = 0;
 	xfer.length = len;
-	xfer.tdio = (__u64)out;
+	xfer.tdio = (__u64)(uintptr_t)out;
 	send_len_byte = DIV_ROUND_UP(xfer.length, BITS_PER_BYTE);
 
 #if DEBUG

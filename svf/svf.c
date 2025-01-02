@@ -169,69 +169,6 @@ static const char *svf_trst_mode_name[4] = {
 	"ABSENT"
 };
 
-struct svf_statemove {
-	tap_state_t from;
-	tap_state_t to;
-	uint32_t num_of_moves;
-	tap_state_t paths[8];
-};
-
-/*
- * These paths are from the SVF specification for the STATE command, to be
- * used when the STATE command only includes the final state.  The first
- * element of the path is the "from" (current) state, and the last one is
- * the "to" (target) state.
- *
- * All specified paths are the shortest ones in the JTAG spec, and are thus
- * not (!!) exact matches for the paths used elsewhere in OpenOCD.  Note
- * that PAUSE-to-PAUSE transitions all go through UPDATE and then CAPTURE,
- * which has specific effects on the various registers; they are not NOPs.
- *
- * Paths to RESET are disabled here.  As elsewhere in OpenOCD, and in XSVF
- * and many SVF implementations, we don't want to risk missing that state.
- * To get to RESET, always we ignore the current state.
- */
-static const struct svf_statemove svf_statemoves[] = {
-	/* from			to				num_of_moves,	paths[8] */
-/*	{TAP_RESET,		TAP_RESET,		1,				{TAP_RESET}}, */
-	{TAP_RESET,		TAP_IDLE,		2,				{TAP_RESET, TAP_IDLE} },
-	{TAP_RESET,		TAP_DRPAUSE,	6,				{TAP_RESET, TAP_IDLE, TAP_DRSELECT,
-														TAP_DRCAPTURE, TAP_DREXIT1, TAP_DRPAUSE} },
-	{TAP_RESET,		TAP_IRPAUSE,	7,				{TAP_RESET, TAP_IDLE, TAP_DRSELECT,
-														TAP_IRSELECT, TAP_IRCAPTURE,
-														TAP_IREXIT1, TAP_IRPAUSE} },
-
-/*	{TAP_IDLE,		TAP_RESET,		4,				{TAP_IDLE,
- * TAP_DRSELECT, TAP_IRSELECT, TAP_RESET}}, */
-	{TAP_IDLE,		TAP_IDLE,		1,				{TAP_IDLE} },
-	{TAP_IDLE,		TAP_DRPAUSE,	5,				{TAP_IDLE, TAP_DRSELECT, TAP_DRCAPTURE,
-														TAP_DREXIT1, TAP_DRPAUSE} },
-	{TAP_IDLE,		TAP_IRPAUSE,	6,				{TAP_IDLE, TAP_DRSELECT, TAP_IRSELECT,
-														TAP_IRCAPTURE, TAP_IREXIT1, TAP_IRPAUSE} },
-
-/*	{TAP_DRPAUSE,	TAP_RESET,		6,				{TAP_DRPAUSE,
- * TAP_DREXIT2, TAP_DRUPDATE, TAP_DRSELECT, TAP_IRSELECT, TAP_RESET}}, */
-	{TAP_DRPAUSE,	TAP_IDLE,		4,				{TAP_DRPAUSE, TAP_DREXIT2, TAP_DRUPDATE,
-														TAP_IDLE} },
-	{TAP_DRPAUSE,	TAP_DRPAUSE,	7,				{TAP_DRPAUSE, TAP_DREXIT2, TAP_DRUPDATE,
-														TAP_DRSELECT, TAP_DRCAPTURE,
-														TAP_DREXIT1, TAP_DRPAUSE} },
-	{TAP_DRPAUSE,	TAP_IRPAUSE,	8,				{TAP_DRPAUSE, TAP_DREXIT2, TAP_DRUPDATE,
-														TAP_DRSELECT, TAP_IRSELECT,
-														TAP_IRCAPTURE, TAP_IREXIT1, TAP_IRPAUSE} },
-
-/*	{TAP_IRPAUSE,	TAP_RESET,		6,				{TAP_IRPAUSE,
- * TAP_IREXIT2, TAP_IRUPDATE, TAP_DRSELECT, TAP_IRSELECT, TAP_RESET}}, */
-	{TAP_IRPAUSE,	TAP_IDLE,		4,				{TAP_IRPAUSE, TAP_IREXIT2, TAP_IRUPDATE,
-														TAP_IDLE} },
-	{TAP_IRPAUSE,	TAP_DRPAUSE,	7,				{TAP_IRPAUSE, TAP_IREXIT2, TAP_IRUPDATE,
-														TAP_DRSELECT, TAP_DRCAPTURE,
-														TAP_DREXIT1, TAP_DRPAUSE} },
-	{TAP_IRPAUSE,	TAP_IRPAUSE,	8,				{TAP_IRPAUSE, TAP_IREXIT2, TAP_IRUPDATE,
-														TAP_DRSELECT, TAP_IRSELECT,
-														TAP_IRCAPTURE, TAP_IREXIT1, TAP_IRPAUSE} }
-};
-
 #define XXR_TDI				(1 << 0)
 #define XXR_TDO				(1 << 1)
 #define XXR_MASK			(1 << 2)
@@ -319,13 +256,7 @@ static int svf_nil;
 static int svf_ignore_error;
 
 /* Targetting particular tap */
-static int svf_tap_is_specified;
-static int svf_set_padding(struct svf_xxr_para *para, int len, unsigned char tdi);
-
-/* Progress Indicator */
-static long svf_total_lines;
-static int svf_percentage;
-static int svf_last_printed_percentage = -1;
+static int svf_tap_is_specified = 0;
 
 /* helper/binbarybuffer.c */
 void *buf_cpy(const void *from, void *_to, unsigned size)
@@ -463,10 +394,10 @@ static void svf_hexbuf_print(int dbg_lvl, const char *file, unsigned line,
 							 const char *function, const uint8_t *buf,
 							 int bit_len, const char *desc)
 {
-	int i, j;
+	int i;
 	int byte_len = (bit_len +7) / 8;
 	printf("%s: \n", desc);
-	for (i = byte_len; i--; i > 0) {
+	for (i = byte_len; i > 0; i--) {
 		printf("%02x", buf[i]);
 	}
 	printf("\n");
@@ -712,19 +643,6 @@ static int svf_adjust_array_length(uint8_t **arr, int orig_bit_len, int new_bit_
 		memset(*arr, 0, new_byte_len);
 	}
 	return ERROR_OK;
-}
-
-static int svf_set_padding(struct svf_xxr_para *para, int len, unsigned char tdi)
-{
-	int error = ERROR_OK;
-	error |= svf_adjust_array_length(&para->tdi, para->len, len);
-	memset(para->tdi, tdi, (len + 7) >> 3);
-	error |= svf_adjust_array_length(&para->tdo, para->len, len);
-	error |= svf_adjust_array_length(&para->mask, para->len, len);
-	para->len = len;
-	para->data_mask = XXR_TDI;
-
-	return error;
 }
 
 static int svf_copy_hexstring_to_binary(char *str, uint8_t **bin, int orig_bit_len, int bit_len)
@@ -1435,6 +1353,15 @@ XXR_common:
 			return ERROR_FAIL;
 			break;
 	}
+
+	if (!svf_quiet)
+	{
+		if (padding_command_skipped)
+		{
+			LOG_DEBUG("(Above Padding command skipped, as per -tap argument)");
+		}
+	}
+
 	if (ERROR_OK != svf_check_tdo())
 		return ERROR_FAIL;
 	return ERROR_OK;
@@ -1484,7 +1411,6 @@ int handle_svf_command(char *filename)
 	memcpy(&svf_para, &svf_para_init, sizeof(svf_para));
 
 	while (ERROR_OK == svf_read_command_from_file(svf_fd)) {
-		int c;
 		/* Run Command */
 		if (ERROR_OK != svf_run_command(svf_command_buffer)) {
 			LOG_ERROR("fail to run command at line %d", svf_line_number);

@@ -240,6 +240,6 @@ void ast_jtag_close(void);
 unsigned int ast_get_jtag_freq(void);
 int ast_set_jtag_freq(unsigned int freq);
 int ast_jtag_run_test_idle(unsigned char end, unsigned int tck);
-int ast_jtag_xfer(unsigned char endsts, unsigned int len, unsigned int *out, unsigned int *in, enum jtag_xfer_type type);
+int ast_jtag_xfer(unsigned char endsts, unsigned int len, const uint8_t *out, uint8_t *in, enum jtag_xfer_type type);
 
 #endif /* __UAPI_LINUX_JTAG_H */

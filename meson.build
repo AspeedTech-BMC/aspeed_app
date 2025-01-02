@@ -39,8 +39,6 @@ executable('mctp-ast', ['mctp/mctp.c', 'mctp/libmctp.c'], install: true,
 # mem_utils
 executable('md', ['mem_utils/md.c', 'mem_utils/mem_common.c'], install: true)
 executable('mw', ['mem_utils/mw.c', 'mem_utils/mem_common.c'], install: true)
-executable('spd', ['mem_utils/spd.c', 'mem_utils/mem_common.c'], install: true)
-executable('spw', ['mem_utils/spw.c', 'mem_utils/mem_common.c'], install: true)
 
 # svf
 executable('svf', ['svf/main.c', 'svf/ast-jtag.c', 'svf/svf.c'], install: true)

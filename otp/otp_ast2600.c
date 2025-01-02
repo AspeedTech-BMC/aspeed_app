@@ -372,15 +372,6 @@ static int get_rid_num(uint32_t *rid)
 	return rid_num;
 }
 
-static void sb_sha224(u8 *src, u32 len, u8 *digest_ret)
-{
-	SHA256_CTX ctx;
-
-	SHA224_Init(&ctx);
-	SHA224_Update(&ctx, src, len);
-	SHA224_Final(digest_ret, &ctx);
-}
-
 static void sb_sha256(u8 *src, u32 len, u8 *digest_ret)
 {
 	SHA256_CTX ctx;
@@ -490,7 +481,7 @@ static int _otp_read(uint32_t offset, int len, uint32_t *data, unsigned long req
 	int ret;
 	struct otp_read xfer;
 
-	xfer.data = data;
+	xfer.data = (uint8_t *)data;
 	xfer.offset = offset;
 	xfer.len = len;
 	ret = ioctl(info_cb.otp_fd, req, &xfer);

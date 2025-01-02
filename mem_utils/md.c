@@ -56,7 +56,7 @@ int main(int argc, char *argv[])
 
 /*	printf("mapping base = %08x , addr = %08x \n", map_base, addr); 
 	addr = map_base + (addr & MAP_MASK); */
-	virt_addr = map_base + (phy_addr & MAP_MASK); 
+	virt_addr = (unsigned long)map_base + (phy_addr & MAP_MASK);
 	
 	/* If another parameter, it is the length to display.
 	* Length is the number of objects, not number of bytes.

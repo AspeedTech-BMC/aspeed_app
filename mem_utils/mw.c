@@ -50,7 +50,7 @@ int main(int argc, char *argv[])
 
 	/*printf("mapping base = %08x , addr = %08x\n", map_base, addr); */
 
-	addr = map_base + (addr & MAP_MASK);
+	addr = (unsigned long)map_base + (addr & MAP_MASK);
 
 	/* Get the value to write.
 	*/

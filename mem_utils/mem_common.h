@@ -12,6 +12,7 @@
 #include <sys/types.h>  
 #include <sys/stat.h>  
 #include <fcntl.h>  
+#include <unistd.h>
 
 #define MAP_SIZE 4096UL
 #define MAP_MASK (MAP_SIZE - 1)

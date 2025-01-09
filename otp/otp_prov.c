@@ -7,8 +7,24 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <fcntl.h>
 #include <errno.h>
 #include "otp_ast2700.h"
+
+bool lib_otp_is_init;
+
+int lib_otp_init(void)
+{
+	info_cb.otp_fd = open("/dev/aspeed-otp", O_RDWR);
+	if (info_cb.otp_fd == -1) {
+		printf("Can't open /dev/aspeed-otp, please install driver!!\n");
+		return -EIO;
+	}
+
+	lib_otp_is_init = true;
+
+	return 0;
+}
 
 int lib_otp_read_data(int mode, int offset, int w_count, uint16_t *output)
 {
@@ -17,6 +33,14 @@ int lib_otp_read_data(int mode, int offset, int w_count, uint16_t *output)
 	int range;
 	int rc;
 
+	if (!lib_otp_is_init) {
+		rc = lib_otp_init();
+		if (rc) {
+			printf("lib OTP init failed\n");
+			goto end;
+		}
+	}
+
 	if (!output) {
 		printf("Invalid parameters\n");
 		rc = -EINVAL;
@@ -24,17 +48,49 @@ int lib_otp_read_data(int mode, int offset, int w_count, uint16_t *output)
 	}
 
 	switch (mode) {
+	case OTP_REGION_ROM:
+		otp_read_func = otp_read_rom;
+		range = OTP_ROM_REGION_SIZE;
+		break;
+	case OTP_REGION_RBP:
+		otp_read_func = otp_read_rbp;
+		range = OTP_RBP_REGION_SIZE;
+		break;
 	case OTP_REGION_CONF:
 		otp_read_func = otp_read_conf;
 		range = OTP_CONF_REGION_SIZE;
+		break;
+	case OTP_REGION_STRAP:
+		otp_read_func = otp_read_strap;
+		range = OTP_STRAP_REGION_SIZE;
+		break;
+	case OTP_REGION_STRAP_EXT:
+		otp_read_func = otp_read_strap_ext;
+		range = OTP_STRAP_EXT_REGION_SIZE / 2;
+		break;
+	case OTP_REGION_STRAP_EXT_VLD:
+		otp_read_func = otp_read_strap_ext_vld;
+		range = OTP_STRAP_EXT_REGION_SIZE / 2;
+		break;
+	case OTP_REGION_USER_DATA:
+		otp_read_func = otp_read_udata;
+		range = OTP_USER_REGION_SIZE;
+		break;
+	case OTP_REGION_SECURE:
+		otp_read_func = otp_read_sdata;
+		range = OTP_SEC_REGION_SIZE;
 		break;
 	case OTP_REGION_CALIPTRA:
 		otp_read_func = otp_read_cptra;
 		range = OTP_CAL_REGION_SIZE;
 		break;
+	case OTP_REGION_PUF:
+		otp_read_func = otp_read_swpuf;
+		range = OTP_PUF_REGION_SIZE;
+		break;
 	default:
 		printf("mode %d is not supported\n", mode);
-		break;
+		return -EINVAL;
 	}
 
 	if (offset + w_count > range) {
@@ -45,7 +101,8 @@ int lib_otp_read_data(int mode, int offset, int w_count, uint16_t *output)
 
 	for (int i = 0; i < w_count; i++) {
 		otp_read_func(offset + i, data + i);
-		printf("read data[%d]: 0x%x:0x%x\n", offset + i, data + i, *(data + i));
+		// printf("read data[%d]: 0x%x:0x%x\n", offset + i,
+		//	(uintptr_t)(data + i), *(data + i));
 	}
 
 	return 0;
@@ -59,6 +116,14 @@ int lib_otp_prog_data(int mode, int offset, int w_count, uint16_t *input)
 	uint32_t prog_address;
 	int range;
 	int rc;
+
+	if (!lib_otp_is_init) {
+		rc = lib_otp_init();
+		if (rc) {
+			printf("lib OTP init failed\n");
+			goto end;
+		}
+	}
 
 	if (!input) {
 		printf("Invalid parameters\n");
@@ -110,6 +175,15 @@ int lib_otp_prog_image(char *path)
 	uint8_t *buf;
 	long fsize;
 	FILE *fd;
+	int rc;
+
+	if (!lib_otp_is_init) {
+		rc = lib_otp_init();
+		if (rc) {
+			printf("lib OTP init failed\n");
+			goto end;
+		}
+	}
 
 	fd = fopen(path, "rb");
 	if (!fd) {

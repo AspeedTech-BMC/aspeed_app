@@ -15,7 +15,6 @@
 #include <termios.h>
 #include <termios.h>
 #include <ctype.h>
-#include "aspeed-otp.h"
 #include "otp_ast2700.h"
 #include "otp_info_ast2700.h"
 

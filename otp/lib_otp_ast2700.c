@@ -8,7 +8,6 @@
 #include <sys/ioctl.h>
 #include <string.h>
 #include <openssl/evp.h>
-#include "aspeed-otp.h"
 #include "otp_ast2700.h"
 
 struct otp_info_cb info_cb;

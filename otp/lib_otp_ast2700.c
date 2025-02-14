@@ -12,6 +12,32 @@
 
 struct otp_info_cb info_cb;
 
+uint32_t chip_version(void)
+{
+	struct otp_revid revid;
+	uint32_t revid0, revid1;
+	int ret;
+
+	ret = ioctl(info_cb.otp_fd, ASPEED_OTP_GET_REVID, &revid);
+	if (ret)
+		goto end;
+
+	revid0 = revid.revid0;
+	revid1 = revid.revid1;
+
+	if (revid0 == ID0_AST2700A0 && revid1 == ID1_AST2700A0) {
+		/* AST2700-A0 */
+		return OTP_AST2700_A0;
+	} else if ((revid0 == ID0_AST2700A1 && revid1 == ID1_AST2700A1) ||
+		   (revid0 == ID0_AST2750A1 && revid1 == ID1_AST2750A1)) {
+		/* AST2700-A1 */
+		return OTP_AST2700_A1;
+	}
+
+end:
+	return OTP_FAILURE;
+}
+
 int confirm_yesno(void)
 {
 	int i;

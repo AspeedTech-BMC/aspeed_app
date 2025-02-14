@@ -236,6 +236,7 @@ struct otp_image_layout {
 	uint8_t *cptra;
 };
 
+uint32_t chip_version(void);
 int confirm_yesno(void);
 void buf_print(uint8_t *buf, int len);
 

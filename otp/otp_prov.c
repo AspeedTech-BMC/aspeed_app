@@ -10,15 +10,41 @@
 #include <fcntl.h>
 #include <errno.h>
 #include "otp_ast2700.h"
+#include "otp_info_ast2700.h"
 
 bool lib_otp_is_init;
 
 int lib_otp_init(void)
 {
+	uint32_t ver;
+
 	info_cb.otp_fd = open("/dev/aspeed-otp", O_RDWR);
 	if (info_cb.otp_fd == -1) {
 		printf("Can't open /dev/aspeed-otp, please install driver!!\n");
 		return -EIO;
+	}
+
+	ver = chip_version();
+	switch (ver) {
+	case OTP_AST2700_A1:
+		printf("Chip: AST2700-A1\n");
+		info_cb.version = OTP_AST2700_A1;
+		info_cb.rbp_info = a1_rbp_info;
+		info_cb.rbp_info_len = ARRAY_SIZE(a1_rbp_info);
+		info_cb.conf_info = a1_conf_info;
+		info_cb.conf_info_len = ARRAY_SIZE(a1_conf_info);
+		info_cb.strap_info = a1_strap_info;
+		info_cb.strap_info_len = ARRAY_SIZE(a1_strap_info);
+		info_cb.strap_ext_info = a1_strap_ext_info;
+		info_cb.strap_ext_info_len = ARRAY_SIZE(a1_strap_ext_info);
+		info_cb.cal_info = a1_cal_info;
+		info_cb.cal_info_len = ARRAY_SIZE(a1_cal_info);
+		info_cb.key_info = a1_key_type;
+		info_cb.key_info_len = ARRAY_SIZE(a1_key_type);
+		break;
+	default:
+		printf("SOC is not supported\n");
+		return CMD_RET_FAILURE;
 	}
 
 	lib_otp_is_init = true;

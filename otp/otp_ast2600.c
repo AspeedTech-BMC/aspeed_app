@@ -481,7 +481,7 @@ static int _otp_read(uint32_t offset, int len, uint32_t *data, unsigned long req
 	int ret;
 	struct otp_read xfer;
 
-	xfer.data = (uint8_t *)data;
+	xfer.data = data;
 	xfer.offset = offset;
 	xfer.len = len;
 	ret = ioctl(info_cb.otp_fd, req, &xfer);

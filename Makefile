@@ -4,7 +4,11 @@
 #
 
 all:
-	find . -maxdepth 1 -type d \( ! -name . \) -exec make -C {} \;
+	for dir in */ ; do \
+		if [ -d "$$dir" ] && [ -f "$$dir/Makefile" ]; then \
+			make -C "$$dir" || exit 1; \
+		fi; \
+	done
 
 clean:
 	find . -maxdepth 1 -type d \( ! -name . \) -exec make -C {} clean \;

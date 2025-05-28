@@ -4,6 +4,7 @@
 // Subcommands: list, stress, send, recv, read, write
 
 #include <dirent.h>
+#include <poll.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -32,6 +33,7 @@ void usage(void)
 
 int stress_test(int fd)
 {
+	struct pollfd fds[1];
 	uint32_t msg[8] = {0};
 	uint32_t buf[0x1000];
 	uint8_t cmd;
@@ -40,11 +42,15 @@ int stress_test(int fd)
 	int ret;
 
 	while (1) {
+		fds[0].fd = fd;
+		fds[0].events = POLLIN;
+
 		while (1) {
-			ret = ioctl(fd, MBOX_IOCTL_RECV, msg);
-			sleep(1);
-			if (ret == 0)
+			ret = poll(fds, 1, 1000);
+			if (ret & POLLIN) {
+				ret = ioctl(fd, MBOX_IOCTL_RECV, msg);
 				break;
+			}
 		}
 
 		cmd = msg[0] & 0xff;

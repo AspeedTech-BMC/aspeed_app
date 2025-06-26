@@ -132,22 +132,28 @@ int aspeed_mctp_tx(struct mctp_binding_astpcie *astpcie, int length, int bus,
 	header->src_epid = 0;
 	header->dest_epid = eid & 0xff;
 	header->header_ver = 0x1;
-	/* 0 ~ 13 : fix header, 14: sed, 15 : pattern, data pad load */
-	//generate data
-	xfer.xfer_buff[0] = 0x1;
-	xfer.xfer_buff[1] = 0x2;
-	xfer.xfer_buff[2] = 0x3;
-	xfer.xfer_buff[3] = 0x4;
+	/* 0 ~ 4 : message type, vendor id and vendor type carried in every fragment
+	 * for aspeed-mctp type handler matching.
+	 */
+	xfer.xfer_buff[0] = ASPEED_MCTP_MSG_TYPE;
+	xfer.xfer_buff[1] = ASPEED_MCTP_VENDOR_ID & 0xff;
+	xfer.xfer_buff[2] = (ASPEED_MCTP_VENDOR_ID >> 8) & 0xff;
+	xfer.xfer_buff[3] = (ASPEED_MCTP_VENDOR_TYPE & ASPEED_MCTP_VENDOR_TYPE_MASK) & 0xff;
+	xfer.xfer_buff[4] = ((ASPEED_MCTP_VENDOR_TYPE & ASPEED_MCTP_VENDOR_TYPE_MASK) >> 8) & 0xff;
 
-	//header pattern;
-	for (i = 4; i < 10; i++) {
+	/* 5 ~ 9 :  0x5a as fixed header pattern, only present in first fragment */
+	for (i = 5; i < 10; i++)
 		xfer.xfer_buff[i] = 0x5a;
-	}
 
+	/* 10 ~ 13 : 0x0 as fixed header pattern, only present in first fragment */
 	xfer.xfer_buff[10] = 0;
 	xfer.xfer_buff[11] = 0;
 	xfer.xfer_buff[12] = 0;
 	xfer.xfer_buff[13] = 0;
+
+	/* 14: sed, 15 : pattern, the random data is calculated as (pattern + sed) % 0xFF
+	 * only present in first fragment to indicate the random data afterwards.
+	 */
 	xfer.xfer_buff[14] = sed;
 	xfer.xfer_buff[15] = pattern;
 
@@ -160,7 +166,13 @@ int aspeed_mctp_tx(struct mctp_binding_astpcie *astpcie, int length, int bus,
 		header->length = astpcie->mtu >> 2;
 		header->pad_len = 0;
 		header->eom = 0;
-		xfer_index = header->som ? 17 : 1;
+		/* xfer_index starts from offset of real random data + 1
+		 * In first fragment, there are 16 bytes header, first random data starts from offset 16
+		 * so xfer_index starts from 17.
+		 * From second fragment and beyond, there are 5 bytes header,
+		 * first random data starts from offset 5, so xfer_index starts from 6.
+		 */
+		xfer_index = header->som ? 17 : 6;
 		xfer.xfer_buff[xfer_index - 1] = (pattern + sed) % 0xff;
 		for (; xfer_index < astpcie->mtu; xfer_index++)
 			xfer.xfer_buff[xfer_index] =
@@ -182,7 +194,7 @@ int aspeed_mctp_tx(struct mctp_binding_astpcie *astpcie, int length, int bus,
 		header->length = ALIGN(remain_xfer, 4) >> 2;
 		header->pad_len = ALIGN(remain_xfer, 4) - remain_xfer;
 		header->eom = eom;
-		xfer_index = header->som ? 17 : 1;
+		xfer_index = header->som ? 17 : 6;
 		xfer.xfer_buff[xfer_index - 1] = (pattern + sed) % 0xff;
 		for (; xfer_index < remain_xfer; xfer_index++)
 			xfer.xfer_buff[xfer_index] =
@@ -273,11 +285,12 @@ next_mctp:
 	if (!header->som)
 		goto padload_dump;
 
-	if (xfer->xfer_buff[0] != 0x1 || xfer->xfer_buff[1] != 0x2 ||
-	    xfer->xfer_buff[2] != 0x3 || xfer->xfer_buff[3] != 0x4)
+	if (xfer->xfer_buff[0] != ASPEED_MCTP_MSG_TYPE ||
+		((xfer->xfer_buff[2] << 8) | xfer->xfer_buff[1]) != ASPEED_MCTP_VENDOR_ID ||
+		((xfer->xfer_buff[4] << 8) | xfer->xfer_buff[3]) != (ASPEED_MCTP_VENDOR_TYPE & ASPEED_MCTP_VENDOR_TYPE_MASK))
 		cmp_err = 1;
 
-	for (i = 4; i < 10; i++)
+	for (i = 5; i < 10; i++)
 		if (xfer->xfer_buff[i] != 0x5a)
 			cmp_err = 1;
 
@@ -431,7 +444,8 @@ int main(int argc, char *argv[])
 		printf("Please check mctp driver\n");
 		return -1;
 	}
-	ret = aspeed_mctp_register_default_handler(astpcie);
+
+	ret = aspeed_mctp_register_type_handler(astpcie, ASPEED_MCTP_MSG_TYPE);
 	if (ret < 0)
 		return ret;
 
@@ -452,6 +466,15 @@ int main(int argc, char *argv[])
 
 	while (1) {
 		if (xfer_dir) {
+			if (length % astpcie->mtu < 5) {
+				printf("Warn: Length %d is smaller than minimum fragment size 5, pad to 5\n",
+				       length % astpcie->mtu);
+				length += 5 - (length % astpcie->mtu);
+			} else if (length < 17) {
+				printf("Warn: minimum payload length 17, pad to 17\n");
+				length = 17;
+			}
+
 			if (aspeed_mctp_tx(astpcie, length, BUS, DEV, FUN, EID,
 					   routing, som, eom))
 				break;
@@ -474,7 +497,7 @@ int main(int argc, char *argv[])
 		}
 	}
 	wait_for_xfer_done(astpcie);
-
+	aspeed_mctp_unregister_type_handler(astpcie, ASPEED_MCTP_MSG_TYPE);
 	aspeed_mctp_free(astpcie);
 	if (!xfer_dir)
 		free(mctp_xfer.header);

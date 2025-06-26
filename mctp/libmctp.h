@@ -20,6 +20,10 @@
 #include <linux/types.h>
 /*************************************************************************************/
 #define ASPEED_MCTP_XFER_SIZE 4096
+#define ASPEED_MCTP_MSG_TYPE 0x7e
+#define ASPEED_MCTP_VENDOR_ID 0x1a03
+#define ASPEED_MCTP_VENDOR_TYPE 0x5274
+#define ASPEED_MCTP_VENDOR_TYPE_MASK 0xFFFF
 
 /*
  * MCTP operations
@@ -170,4 +174,6 @@ int aspeed_mctp_send(struct mctp_binding_astpcie *astpcie,
 int aspeed_mctp_recv(struct mctp_binding_astpcie *astpcie,
 		     struct aspeed_mctp_xfer *xfer);
 int aspeed_mctp_register_default_handler(struct mctp_binding_astpcie *astpcie);
+int aspeed_mctp_register_type_handler(struct mctp_binding_astpcie *astpcie, unsigned char type);
+int aspeed_mctp_unregister_type_handler(struct mctp_binding_astpcie *astpcie, unsigned char type);
 int aspeed_mctp_get_mtu(struct mctp_binding_astpcie *astpcie);

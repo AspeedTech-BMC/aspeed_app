@@ -115,26 +115,21 @@ int ast_jtag_run_test_idle(unsigned char end, unsigned int tck)
 {
 	int retval;
 	struct jtag_tap_state run_idle;
-	__u8 execute_tck;
 
-	do {
-		execute_tck = tck > 0xff ? 0xff : tck;
-		run_idle.from = JTAG_STATE_CURRENT;
-		run_idle.reset = JTAG_NO_RESET;
-		run_idle.endstate = end;
-		run_idle.tck = execute_tck;
+	run_idle.from = JTAG_STATE_CURRENT;
+	run_idle.reset = JTAG_NO_RESET;
+	run_idle.endstate = end;
+	run_idle.tck = tck;
 
-		ast_jtag_printf("from:%d, reset:%d, endstate:%d, tck:%d\n",
-				run_idle.from, run_idle.reset,
-				run_idle.endstate, run_idle.tck);
+	ast_jtag_printf("from:%d, reset:%d, endstate:%d, tck:%d\n",
+			run_idle.from, run_idle.reset,
+			run_idle.endstate, run_idle.tck);
 
-		retval = ioctl(jtag_fd, JTAG_SIOCSTATE, &run_idle);
-		if (retval == -1) {
-			perror("ioctl JTAG run reset fail!\n");
-			return -1;
-		}
-		tck -= execute_tck;
-	} while (tck);
+	retval = ioctl(jtag_fd, JTAG_SIOCSTATE, &run_idle);
+	if (retval == -1) {
+		perror("ioctl JTAG run reset fail!\n");
+		return -1;
+	}
 
 //	if(end)
 //		usleep(3000);

@@ -44,7 +44,15 @@ executable('mw', ['mem_utils/mw.c', 'mem_utils/mem_common.c'], install: true)
 executable('svf', ['svf/main.c', 'svf/ast-jtag.c', 'svf/svf.c'], install: true)
 
 # otp
-executable('otp', 'otp/otp_ast2600.c', install: true, dependencies: dependency('openssl'),
+platform = get_option('otp-platform')
+if platform == 'ast2700'
+  otp_src = ['otp/otp_ast2700.c', 'otp/lib_otp_ast2700.c', 'otp/otp_prov.c']
+elif platform == 'ast2600'
+  otp_src = 'otp/otp_ast2600.c'
+else
+  error('Invalid otp-platform: ' + platform)
+endif
+executable('otp', otp_src, install: true, dependencies: dependency('openssl'),
     include_directories: include_directories('otp'))
 
 # usb

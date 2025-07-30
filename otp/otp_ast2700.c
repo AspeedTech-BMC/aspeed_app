@@ -1694,7 +1694,7 @@ int main(int argc, char *argv[])
 	int ret;
 	uint16_t otp_conf0;
 
-	if (argc < 2 || argc > 8) {
+	if (argc < 3 || argc > 8) {
 		ret = OTP_USAGE;
 		goto end;
 	}

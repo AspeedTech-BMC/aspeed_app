@@ -141,9 +141,9 @@ struct aspeed_espi_ioc {
 					     0x02, struct aspeed_espi_ioc)
 /* peripheral channel (ch1) */
 #define ASPEED_ESPI_VW_GET_GPIO_VAL	_IOR(__ASPEED_ESPI_IOCTL_MAGIC, \
-					     0x10, uint8_t)
+					     0x10, uint32_t)
 #define ASPEED_ESPI_VW_PUT_GPIO_VAL	_IOW(__ASPEED_ESPI_IOCTL_MAGIC, \
-					     0x11, uint8_t)
+					     0x11, uint32_t)
 /* out-of-band channle (ch2) */
 #define ASPEED_ESPI_OOB_GET_RX		_IOR(__ASPEED_ESPI_IOCTL_MAGIC, \
 					     0x20, struct aspeed_espi_ioc)

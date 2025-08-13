@@ -132,24 +132,60 @@ struct aspeed_espi_ioc {
 
 #define __ASPEED_ESPI_IOCTL_MAGIC	0xb8
 
-/* peripheral channel (ch0) */
+/*
+ * Peripheral Channel (CH0)
+ *  - ASPEED_ESPI_PERIF_PC_GET_RX
+ *      Receive an eSPI Posted/Completion packet
+ *  - ASPEED_ESPI_PERIF_PC_PUT_TX
+ *      Transmit an eSPI Posted/Completion packet
+ *  - ASPEED_ESPI_PERIF_NP_PUT_TX
+ *      Transmit an eSPI Non-Posted packet
+ */
 #define ASPEED_ESPI_PERIF_PC_GET_RX	_IOR(__ASPEED_ESPI_IOCTL_MAGIC, \
 					     0x00, struct aspeed_espi_ioc)
 #define ASPEED_ESPI_PERIF_PC_PUT_TX	_IOW(__ASPEED_ESPI_IOCTL_MAGIC, \
 					     0x01, struct aspeed_espi_ioc)
 #define ASPEED_ESPI_PERIF_NP_PUT_TX	_IOW(__ASPEED_ESPI_IOCTL_MAGIC, \
 					     0x02, struct aspeed_espi_ioc)
-/* peripheral channel (ch1) */
+/*
+ * Virtual Wire Channel (CH1)
+ *  - ASPEED_ESPI_VW_GET_GPIO_VAL
+ *      Read the input value of GPIO over the VW channel
+ *  - ASPEED_ESPI_VW_PUT_GPIO_VAL
+ *      Write the output value of GPIO over the VW channel
+ *  - ASPEED_ESPI_VW_GET_GPIO_VAL1 (new feature in AST2700)
+ *      Read the input value1 of GPIO over the VW channel
+ *  - ASPEED_ESPI_VW_PUT_GPIO_VAL1 (new feature in AST2700)
+ *      Write the output value1 of GPIO over the VW channel
+ */
 #define ASPEED_ESPI_VW_GET_GPIO_VAL	_IOR(__ASPEED_ESPI_IOCTL_MAGIC, \
 					     0x10, uint32_t)
 #define ASPEED_ESPI_VW_PUT_GPIO_VAL	_IOW(__ASPEED_ESPI_IOCTL_MAGIC, \
 					     0x11, uint32_t)
-/* out-of-band channle (ch2) */
+#ifdef __aarch64__
+#define ASPEED_ESPI_VW_GET_GPIO_VAL1	_IOR(__ASPEED_ESPI_IOCTL_MAGIC, \
+					     0x12, uint32_t)
+#define ASPEED_ESPI_VW_PUT_GPIO_VAL1	_IOW(__ASPEED_ESPI_IOCTL_MAGIC, \
+					     0x13, uint32_t)
+#endif
+/*
+ * Out-of-band Channel (CH2)
+ *  - ASPEED_ESPI_OOB_GET_RX
+ *      Receive an eSPI OOB packet
+ *  - ASPEED_ESPI_OOB_PUT_TX
+ *      Transmit an eSPI OOB packet
+ */
 #define ASPEED_ESPI_OOB_GET_RX		_IOR(__ASPEED_ESPI_IOCTL_MAGIC, \
 					     0x20, struct aspeed_espi_ioc)
 #define ASPEED_ESPI_OOB_PUT_TX		_IOW(__ASPEED_ESPI_IOCTL_MAGIC, \
 					     0x21, struct aspeed_espi_ioc)
-/* flash channel (ch3) */
+/*
+ * Flash Channel (CH3)
+ *  - ASPEED_ESPI_FLASH_GET_RX
+ *      Receive an eSPI flash packet
+ *  - ASPEED_ESPI_FLASH_PUT_TX
+ *      Transmit an eSPI flash packet
+ */
 #define ASPEED_ESPI_FLASH_GET_RX	_IOR(__ASPEED_ESPI_IOCTL_MAGIC, \
 					     0x30, struct aspeed_espi_ioc)
 #define ASPEED_ESPI_FLASH_PUT_TX	_IOW(__ASPEED_ESPI_IOCTL_MAGIC, \

@@ -466,7 +466,7 @@ int main(int argc, char *argv[])
 
 	while (1) {
 		if (xfer_dir) {
-			if (length % astpcie->mtu < 5) {
+			if ((length % astpcie->mtu < 5) && (length % astpcie->mtu != 0)) {
 				printf("Warn: Length %d is smaller than minimum fragment size 5, pad to 5\n",
 				       length % astpcie->mtu);
 				length += 5 - (length % astpcie->mtu);

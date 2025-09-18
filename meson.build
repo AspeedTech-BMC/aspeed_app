@@ -58,3 +58,5 @@ executable('otp', otp_src, install: true, dependencies: dependency('openssl'),
 # usb
 executable('hid_gadget_app', 'usb/hid_gadget_test.c', install: true)
 
+# cptra
+executable('aspeed_cptra', 'cptra/aspeed_cptra.c', install: true)

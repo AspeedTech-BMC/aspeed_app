@@ -3,6 +3,8 @@
 #ifndef __CMD_CPTRA_H_
 #define __CMD_CPTRA_H_
 
+#include <stdbool.h>
+
 struct hash_testvec {
 	const char *plaintext;
 	unsigned int psize;

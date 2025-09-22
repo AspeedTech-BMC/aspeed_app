@@ -197,6 +197,83 @@ int otp_verify_image(uint8_t *src_buf, uint32_t length, uint8_t *digest_buf)
 	return OTP_FAILURE;
 }
 
+void otp_strap_status(struct otpstrap_status *otpstrap)
+{
+	int strap_start, strap_end;
+	uint16_t data[2];
+	int ret;
+
+	/* Initial otpstrap */
+	for (int i = 0; i < 32; i++) {
+		otpstrap[i].value = 0;
+		otpstrap[i].remain_times = 6;
+		otpstrap[i].writeable_option = -1;
+		otpstrap[i].protected = 0;
+	}
+
+	/* Check OTP strap value */
+	strap_start = 2;
+	strap_end = 2 + 12;
+
+	for (int i = strap_start; i < strap_end; i += 2) {
+		int option = (i - strap_start) / 2;
+
+		otp_read_strap(i, &data[0]);
+		otp_read_strap(i + 1, &data[1]);
+
+		for (int j = 0; j < 16; j++) {
+			char bit_value = ((data[0] >> j) & 0x1);
+
+			if (bit_value == 0 && otpstrap[j].writeable_option == -1)
+				otpstrap[j].writeable_option = option;
+			if (bit_value == 1)
+				otpstrap[j].remain_times--;
+			otpstrap[j].value ^= bit_value;
+			otpstrap[j].option_value[option] = bit_value;
+		}
+
+		for (int j = 16; j < 32; j++) {
+			char bit_value = ((data[1] >> (j - 16)) & 0x1);
+
+			if (bit_value == 0 && otpstrap[j].writeable_option == -1)
+				otpstrap[j].writeable_option = option;
+			if (bit_value == 1)
+				otpstrap[j].remain_times--;
+			otpstrap[j].value ^= bit_value;
+			otpstrap[j].option_value[option] = bit_value;
+		}
+	}
+
+	/* Check OTP strap write protect */
+	ret = otp_read_strap(0, &data[0]);
+	ret += otp_read_strap(1, &data[1]);
+	if (ret)
+		printf("OTP read strap failed, ret=0x%x\n", ret);
+
+	for (int j = 0; j < 16; j++) {
+		if (((data[0] >> j) & 0x1) == 1)
+			otpstrap[j].protected = 1;
+	}
+
+	for (int j = 16; j < 32; j++) {
+		if (((data[1] >> (j - 16)) & 0x1) == 1)
+			otpstrap[j].protected = 1;
+	}
+
+#ifdef DEBUG
+	for (int i = 0; i < 32; i++) {
+		printf("otpstrap[%d]: value:%d, remain_times:%d, writeable_option:%d, protected:%d\n",
+		       i, otpstrap[i].value, otpstrap[i].remain_times,
+		       otpstrap[i].writeable_option, otpstrap[i].protected);
+
+		printf("option_value: ");
+		for (int j = 0; j < 6; j++)
+			printf("%d ", otpstrap[i].option_value[j]);
+		printf("\n");
+	}
+#endif
+}
+
 int otp_prog_data(int mode, int otp_w_offset, int bit_offset,
 		  int value, int nconfirm, bool debug)
 {

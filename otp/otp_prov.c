@@ -325,6 +325,9 @@ int lib_otp_prog_image(char *path)
 		}
 	}
 	if (otp_header->image_info & OTP_INC_STRAP) {
+		printf("Read strap region...\n");
+		otp_strap_status(otpstrap);
+
 		printf("programing strap region ...\n");
 		ret = otp_prog_strap_image(&image_layout, otpstrap);
 		if (ret != 0) {

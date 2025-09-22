@@ -268,6 +268,7 @@ int otp_prog_image_region(struct otp_image_layout *image_layout, enum otp_region
 int otp_prog_strap_image(struct otp_image_layout *image_layout,
 			 struct otpstrap_status *otpstrap);
 int otp_prog_strap_ext_image(struct otp_image_layout *image_layout);
+void otp_strap_status(struct otpstrap_status *otpstrap);
 
 extern struct otp_info_cb info_cb;
 

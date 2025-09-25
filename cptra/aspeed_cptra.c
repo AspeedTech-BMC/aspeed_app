@@ -732,7 +732,7 @@ static int cptra_test_invoke_dpe_command_sign(uint8_t *context_handle, uint8_t *
 	return ret;
 }
 
-static int cptra_test_invoke_dpe_command_get_certificate_chain(void)
+static int cptra_test_invoke_dpe_command_get_certificate_chain(bool debug)
 {
 	uint8_t *p8_bmcu_out = (uint8_t *)IPC_CHANNEL_1_BOOTMCU_OUT_ADDR;
 	uint8_t *p8_bmcu_in = (uint8_t *)IPC_CHANNEL_1_BOOTMCU_IN_ADDR;
@@ -787,11 +787,20 @@ static int cptra_test_invoke_dpe_command_get_certificate_chain(void)
 		}
 	} while (1);
 
-	dbg_hexdump(certificate_chain, offset, "certificate_chain:");
+	if (debug)
+		hexdump(certificate_chain, offset, "certificate_chain:");
+	else
+		dbg_hexdump(certificate_chain, offset, "certificate_chain:");
+
 	certificate_chain_size = offset;
 
 end:
 	return ret;
+}
+
+static int cptra_test_get_cert_chain(void)
+{
+	return cptra_test_invoke_dpe_command_get_certificate_chain(true);
 }
 
 static int cptra_test_invoke_dpe_command(void)
@@ -810,7 +819,7 @@ static int cptra_test_invoke_dpe_command(void)
 	public_key[0] = 0x04;
 
 	ret = cptra_test_invoke_dpe_command_get_profile();
-	ret += cptra_test_invoke_dpe_command_get_certificate_chain();
+	ret += cptra_test_invoke_dpe_command_get_certificate_chain(false);
 
 	// Default Context
 	ret += cptra_test_invoke_dpe_command_certify_key(default_context, 0, public_key + 1, certify_context);
@@ -2342,6 +2351,7 @@ static struct cptra_test_entry cptra_tests[] = {
 	{ "get_rt_alias_cert",			cptra_test_get_rt_alias_cert },
 	{ "get_idevid_csr",			cptra_test_get_idevid_csr },
 	{ "invoke_dpe_command",			cptra_test_invoke_dpe_command },
+	{ "get_cert_chain",			cptra_test_get_cert_chain },
 
 	{ "fw_info",				cptra_test_fw_info },
 	{ "capabilities",			cptra_test_capabilities },

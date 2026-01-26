@@ -1024,6 +1024,8 @@ static int otp_prog_image(char *path, int nconfirm)
 		image_soc_ver = OTP_AST2700_A0;
 	} else if (otp_header->soc_ver == SOC_AST2700A1) {
 		image_soc_ver = OTP_AST2700_A1;
+	} else if (otp_header->soc_ver == SOC_AST2700A2) {
+		image_soc_ver = OTP_AST2700_A2;
 	} else {
 		printf("Image SOC Version is not supported\n");
 		ret = OTP_FAILURE;
@@ -1662,6 +1664,22 @@ int main(int argc, char *argv[])
 	case OTP_AST2700_A1:
 		printf("Chip: AST2700-A1\n");
 		info_cb.version = OTP_AST2700_A1;
+		info_cb.rbp_info = a1_rbp_info;
+		info_cb.rbp_info_len = ARRAY_SIZE(a1_rbp_info);
+		info_cb.conf_info = a1_conf_info;
+		info_cb.conf_info_len = ARRAY_SIZE(a1_conf_info);
+		info_cb.strap_info = a1_strap_info;
+		info_cb.strap_info_len = ARRAY_SIZE(a1_strap_info);
+		info_cb.strap_ext_info = a1_strap_ext_info;
+		info_cb.strap_ext_info_len = ARRAY_SIZE(a1_strap_ext_info);
+		info_cb.cal_info = a1_cal_info;
+		info_cb.cal_info_len = ARRAY_SIZE(a1_cal_info);
+		info_cb.key_info = a1_key_type;
+		info_cb.key_info_len = ARRAY_SIZE(a1_key_type);
+		break;
+	case OTP_AST2700_A2:
+		printf("Chip: AST2700-A2\n");
+		info_cb.version = OTP_AST2700_A2;
 		info_cb.rbp_info = a1_rbp_info;
 		info_cb.rbp_info_len = ARRAY_SIZE(a1_rbp_info);
 		info_cb.conf_info = a1_conf_info;

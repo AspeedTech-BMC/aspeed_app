@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 
-#define OTP_INFO_VER		"1.1.1"
+#define OTP_INFO_VER		"2.0.0"
 
 #define OTP_REG_RESERVED        -1
 #define OTP_REG_VALUE		-2
@@ -295,16 +295,16 @@ static const struct otpstrap_info a1_strap_info[] = {
 	{ 20, 1, 0, "Selection of IO for Uart Debug" },
 	{ 21, 1, 1, "Disable JTAG of Caliptra permanently" },
 	{ 21, 1, 0, "Enable JTAG of Caliptra permanently" },
-	{ 22, 1, 1, "Disable SoC FMC hash verify" },
-	{ 22, 1, 0, "Enable SoC FMC hash verify" },
+	{ 22, 1, 1, "Enable ROM interrupt" },
+	{ 22, 1, 0, "Disable ROM interrupt" },
 	{ 23, 1, 1, "Disable BootMCU ROM & jump to I_FMC" },
 	{ 23, 1, 0, "Enable BootMCU ROM & jump to I_FMC" },
 	{ 24, 1, 1, "Boot from eMMC or UFS selection" },
 	{ 24, 1, 0, "Boot from eMMC or UFS selection" },
-	{ 25, 1, 1, "Allow BROM to wait SPI flash ready bit." },
-	{ 25, 1, 0, "Allow BROM to wait SPI flash ready bit." },
-	{ 26, 1, 1, "Use 4-byte command to read flash." },
-	{ 26, 1, 0, "Use 4-byte command to read flash." },
+	{ 25, 1, 1, "Allow BROM to wait SPI flash ready bit" },
+	{ 25, 1, 0, "Allow BROM to wait SPI flash ready bit" },
+	{ 26, 1, 1, "Use 4-byte command to read flash" },
+	{ 26, 1, 0, "Use 4-byte command to read flash" },
 	{ 27, 2, 0, "Recovery from Uart or USB selection" },
 	{ 27, 2, 1, "Recovery from Uart or USB selection" },
 	{ 27, 2, 2, "Recovery from Uart or USB selection" },

@@ -27,10 +27,11 @@ enum otp_status {
 	OTP_PROG_SKIP,
 };
 
-#define OTP_VER				"1.1.0"
+#define OTP_VER				"2.0.0"
 
 #define OTP_AST2700_A0			0
 #define OTP_AST2700_A1			1
+#define OTP_AST2700_A2			2
 
 #define ID0_AST2700A0			0x06000003
 #define ID1_AST2700A0			0x06000003
@@ -49,6 +50,7 @@ enum otp_status {
 
 #define SOC_AST2700A0			8
 #define SOC_AST2700A1			9
+#define SOC_AST2700A2			0xA
 
 /* OTP memory address from 0x0~0x2000. (unit: Single Word 16-bits) */
 /* ----  0x0  -----

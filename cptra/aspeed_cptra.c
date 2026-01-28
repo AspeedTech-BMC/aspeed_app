@@ -50,9 +50,16 @@
 #define IDEVID_CSR_SIZE				0x1c0
 #define PAGE_SIZE				0x1000
 
+#define MAP_SIZE				4096UL
+#define MAP_MASK				(MAP_SIZE - 1)
+
+#define AST27x0A1				0x601
+#define AST27x0A2				0x602
+
 #define ARRAY_SIZE(arr)				(sizeof(arr) / sizeof((arr)[0]))
 
 static int gbl_fd;
+static uint32_t gbl_chip_rid;
 
 /* volatile is intentional here */
 static volatile uint8_t *shared_mem_in;
@@ -2260,6 +2267,42 @@ static int cptra_test_sha384_acc(void)
 	return 0;
 }
 
+static int get_cptra_fw_offset(int fd, int *fw_offset)
+{
+	uint32_t tmp;
+	int ret = 0;
+	ssize_t r;
+
+	// parse image info
+	r = pread(fd, &tmp, 4, 0x10);
+	if (r < 0) {
+		printf("fail to read data from mtd0.\n");
+		ret = -1;
+		goto end;
+	}
+
+	// check fw id = 1
+	if (tmp != 1) {
+		printf("invalid caliptra fw id: 0x%x\n", tmp);
+		ret = -1;
+		goto end;
+	}
+
+	// read fw offset
+	r = pread(fd, &tmp, 4, 0x14);
+	if (r < 0) {
+		printf("fail to read data from mtd0.\n");
+		ret = -1;
+		goto end;
+	}
+
+	*fw_offset = tmp;
+	dbg_printf("caliptra fw offset: 0x%x\n", *fw_offset);
+
+end:
+	return ret;
+}
+
 static int cptra_test_caliptra_fw_load(void)
 {
 	uint8_t *p8_bmcu_in = (uint8_t *)IPC_CHANNEL_1_BOOTMCU_IN_ADDR;
@@ -2280,6 +2323,22 @@ static int cptra_test_caliptra_fw_load(void)
 	fd = open("/dev/mtd0", O_RDONLY);
 	if (fd < 0) {
 		printf("fail to open mtd0 device.\n");
+		return -1;
+	}
+
+	if (gbl_chip_rid == AST27x0A1) {
+		offset = 0x0;
+
+	} else if (gbl_chip_rid == AST27x0A2) {
+		ret = get_cptra_fw_offset(fd, (int *)&offset);
+		if (ret) {
+			printf("fail to get caliptra fw offset from mtd0.\n");
+			close(fd);
+			return -1;
+		}
+
+	} else {
+		printf("Unsupported chip rid: 0x%x\n", gbl_chip_rid);
 		return -1;
 	}
 
@@ -2475,6 +2534,32 @@ static void usage(void)
 	printf("\tstress			# run cptra stress test\n");
 }
 
+static void get_chip_version(void)
+{
+	uint32_t scu1_base = 0x14c02000;
+	unsigned long va;
+	void *map_base;
+	uint32_t data;
+	int fd;
+
+	fd = open("/dev/mem", O_RDWR | O_SYNC);
+	if (fd < 0) {
+		perror("open");
+		return;
+	}
+
+	map_base = mmap(0, MAP_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd, scu1_base & ~MAP_MASK);
+	if (!map_base) {
+		printf("mmap failed\n");
+		return;
+	}
+
+	va = (unsigned long)map_base + (scu1_base & MAP_MASK);
+	data = *((volatile uint32_t *)va + 0x0);
+
+	gbl_chip_rid = (data >> 16) & 0xFFFF;
+}
+
 int main(int argc, char *argv[])
 {
 	const char *device = argv[1];
@@ -2493,6 +2578,8 @@ int main(int argc, char *argv[])
 	}
 
 	cmd = argv[2];
+
+	get_chip_version();
 
 	if (strcmp(device, "list") == 0) {
 		struct dirent *de;

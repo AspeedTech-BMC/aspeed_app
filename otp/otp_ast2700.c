@@ -1294,6 +1294,53 @@ static int do_otpread(int argc, char *const argv[])
 	return CMD_RET_USAGE;
 }
 
+static int do_otpdump(int argc, char *const argv[])
+{
+	uint32_t offset;
+	uint16_t data;
+	int ret;
+	FILE *fd;
+
+	if (argc != 2)
+		return CMD_RET_USAGE;
+
+	fd = fopen(argv[1], "wb");
+	if (!fd) {
+		printf("failed to open %s\n", argv[1]);
+		return CMD_RET_FAILURE;
+	}
+
+	/*
+	 * Read all OTP memory up to the end of the SWPUF region.
+	 */
+	for (offset = 0; offset < SW_PUF_REGION_END_ADDR; offset++) {
+		struct otp_read rdata;
+
+		rdata.offset = offset;
+		rdata.len = 1;
+		rdata.data = (uint8_t *)&data;
+
+		ret = ioctl(info_cb.otp_fd, ASPEED_OTP_READ_DATA, &rdata);
+		if (ret) {
+			printf("Failed to read OTP at offset 0x%x\n", offset);
+			fclose(fd);
+			return CMD_RET_FAILURE;
+		}
+
+		/* Write the 16-bit word to the file */
+		if (fwrite(&data, 2, 1, fd) != 1) {
+			printf("Failed to write to %s\n", argv[1]);
+			fclose(fd);
+			return CMD_RET_FAILURE;
+		}
+	}
+
+	fclose(fd);
+	printf("Successfully dumped OTP to %s\n", argv[1]);
+
+	return CMD_RET_SUCCESS;
+}
+
 static int do_otppatch(int argc, char *const argv[])
 {
 	uint8_t *addr;
@@ -1577,7 +1624,8 @@ static struct cmd_tbl cmd_otp[] = {
 	{ "pb",      7, do_otppb    },
 	{ "patch",   6, do_otppatch },
 	{ "ecc",     3, do_otpecc   },
-	{ "info",    3, do_otpinfo  }
+	{ "info",    3, do_otpinfo  },
+	{ "dump",    3, do_otpdump  }
 };
 
 static void usage(void)
@@ -1592,7 +1640,8 @@ static void usage(void)
 	       "\totp <dev> info key|rbp|conf|strap|strap-ext\n"
 	       "\totp <dev> patch prog <dram_addr> <otp_w_offset> <w_count>\n"
 	       "\totp <dev> patch enable pre|post <otp_start_w_offset> <w_count>\n"
-	       "\totp <dev> ecc status|enable\n");
+	       "\totp <dev> ecc status|enable\n"
+	       "\totp <dev> dump <file>\n");
 }
 
 struct cmd_tbl *find_cmd_tbl(const char *cmd, struct cmd_tbl *table,

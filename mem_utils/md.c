@@ -29,12 +29,11 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
-    fd = open("/dev/mem", O_RDWR|O_SYNC);  
-    if (fd == -1)  
-    {  
-    	printf("open /dev/mem fail .. \n");
-		return (-1);  
-    }  
+	fd = open("/dev/mem", O_RDWR | O_SYNC);
+	if (fd == -1) {
+		printf("open /dev/mem fail..\n");
+		return (-1);
+	}
 
 	/* New command specified.  Check for a size specification.
 	 * Defaults to long if no or incorrect specification.
@@ -45,16 +44,16 @@ int main(int argc, char *argv[])
 	/* Address is specified since argc > 1
 	addr = simple_strtoul(argv[1], NULL, 16); */
 	phy_addr = simple_strtoul(argv[1], NULL, 16);
-/*	printf("addr = %08x \n", addr); */
+	/* printf("addr = %08x\n", addr); */
 
 	map_base = mmap(0, MAP_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd, phy_addr & ~MAP_MASK);
 
 	if(map_base == (void *) -1) {
-    	printf("mmap fail .. \n");
+		printf("mmap fail..\n");
 		return (-1);  
 	}
 
-/*	printf("mapping base = %08x , addr = %08x \n", map_base, addr); 
+	/* printf("mapping base = %08x, addr = %08x\n", map_base, addr);
 	addr = map_base + (addr & MAP_MASK); */
 	virt_addr = (unsigned long)map_base + (phy_addr & MAP_MASK);
 	
@@ -66,13 +65,14 @@ int main(int argc, char *argv[])
 
 	/* Print the lines. */
 	print_buffer(virt_addr, (void*)virt_addr, size, length, DISP_LINE_LEN/size);
-	phy_addr += size*length;
 
 	dp_last_addr = phy_addr;
 	dp_last_length = length;
 	dp_last_size = size;
-	if(munmap(map_base, MAP_SIZE) == -1) printf("mmap fail .. \n");
-    close(fd);	
+	if (munmap(map_base, MAP_SIZE) == -1)
+		printf("mmap fail ..\n");
+
+	close(fd);
 	return (rc);
 }
 

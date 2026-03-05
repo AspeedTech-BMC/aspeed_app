@@ -16,6 +16,7 @@ int main(int argc, char *argv[])
 	int	size, fd;
 	int	rc = 0;
 	unsigned long dp_last_addr=0, dp_last_size=0, dp_last_length=32;
+	unsigned long remainings, offset, chunk_size;
 
 	/* We use the last specified parameters, unless new ones are
 	 * entered.
@@ -46,32 +47,49 @@ int main(int argc, char *argv[])
 	phy_addr = simple_strtoul(argv[1], NULL, 16);
 	/* printf("addr = %08x\n", addr); */
 
-	map_base = mmap(0, MAP_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd, phy_addr & ~MAP_MASK);
-
-	if(map_base == (void *) -1) {
-		printf("mmap fail..\n");
-		return (-1);  
-	}
-
-	/* printf("mapping base = %08x, addr = %08x\n", map_base, addr);
-	addr = map_base + (addr & MAP_MASK); */
-	virt_addr = (unsigned long)map_base + (phy_addr & MAP_MASK);
-	
 	/* If another parameter, it is the length to display.
 	* Length is the number of objects, not number of bytes.
 	*/
 	if (argc > 2)
 		length = simple_strtoul(argv[2], NULL, 16);
 
-	/* Print the lines. */
-	print_buffer(virt_addr, (void*)virt_addr, size, length, DISP_LINE_LEN/size);
+	remainings = length;
+	while (remainings) {
+		/* start offset of readings in current 4K page */
+		offset = phy_addr & MAP_MASK;
+
+		/* calculate chunk size to read in unit `size` */
+		chunk_size = (MAP_SIZE - offset) / size;
+		chunk_size = chunk_size > remainings ? remainings : chunk_size;
+
+		if (chunk_size == 0) {
+			printf("misaligned addr vs size, addr = %08lx, size = %d\n", phy_addr, size);
+			return 1;
+		}
+
+		map_base = mmap(0, MAP_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd, phy_addr & ~MAP_MASK);
+		if (map_base == (void *)-1) {
+			printf("mmap fail ..\n");
+			return (-1);
+		}
+
+		/* printf("mapping base = %08x , addr = %08x\n", map_base, addr);
+		 * addr = map_base + (addr & MAP_MASK);
+		 */
+		virt_addr = (unsigned long)map_base + (phy_addr & MAP_MASK);
+
+		/* Print the lines. */
+		print_buffer(virt_addr, (void *)virt_addr, size, chunk_size, DISP_LINE_LEN / size);
+
+		if (munmap(map_base, MAP_SIZE) == -1)
+			printf("mmap fail ..\n");
+
+		remainings -= chunk_size;
+	}
 
 	dp_last_addr = phy_addr;
 	dp_last_length = length;
 	dp_last_size = size;
-	if (munmap(map_base, MAP_SIZE) == -1)
-		printf("mmap fail ..\n");
-
 	close(fd);
 	return (rc);
 }

@@ -360,7 +360,7 @@ int otp_prog_data(int mode, int otp_w_offset, int bit_offset,
 			printf("Program OTPSTRAPEXT_VLD%d[0x%X] = 0x%x...\n", otp_w_offset,
 			       bit_offset, value);
 		break;
-	case OTP_REGION_USER_DATA:
+	case OTP_REGION_USER:
 		otp_read_udata(otp_w_offset, read);
 		prog_address = USER_REGION_START_ADDR + otp_w_offset;
 		if (debug)
@@ -451,6 +451,12 @@ int otp_prog_image_region(struct otp_image_layout *image_layout, enum otp_region
 		size = image_layout->cptra_length;
 		w_region_size = OTP_CAL_REGION_SIZE;
 		otp_read_func = otp_read_cptra;
+		break;
+	case OTP_REGION_USER:
+		buf = (uint16_t *)image_layout->user;
+		size = image_layout->user_length;
+		w_region_size = OTP_USER_REGION_SIZE;
+		otp_read_func = otp_read_udata;
 		break;
 	default:
 		printf("%s: region type 0x%x is not supported\n", __func__, region_type);

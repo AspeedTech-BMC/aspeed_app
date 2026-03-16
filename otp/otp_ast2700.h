@@ -14,7 +14,7 @@ enum otp_region {
 	OTP_REGION_STRAP,
 	OTP_REGION_STRAP_EXT,
 	OTP_REGION_STRAP_EXT_VLD,
-	OTP_REGION_USER_DATA,
+	OTP_REGION_USER,
 	OTP_REGION_SECURE,
 	OTP_REGION_CALIPTRA,
 	OTP_REGION_PUF,
@@ -27,7 +27,7 @@ enum otp_status {
 	OTP_PROG_SKIP,
 };
 
-#define OTP_VER				"2.0.0"
+#define OTP_VER				"2.1.0"
 
 #define OTP_AST2700_A0			0
 #define OTP_AST2700_A1			1
@@ -137,6 +137,7 @@ enum otp_status {
 #define OTP_INC_STRAP_EXT		BIT(27)
 #define OTP_INC_SECURE			BIT(26)
 #define OTP_INC_CALIPTRA		BIT(25)
+#define OTP_INC_USER			BIT(24)
 #define OTP_REGION_SIZE(info)		(((info) >> 16) & 0xffff)
 #define OTP_REGION_OFFSET(info)		((info) & 0xffff)
 #define OTP_IMAGE_SIZE(info)		((info) & 0xffff)
@@ -177,6 +178,7 @@ struct otp_header {
 	uint32_t	strap_ext_info;
 	uint32_t	secure_info;
 	uint32_t	cptra_info;
+	uint32_t	user_info;
 	uint32_t	checksum_offset;
 };
 
@@ -237,6 +239,7 @@ struct otp_image_layout {
 	int strap_ext_length;
 	int secure_length;
 	int cptra_length;
+	int user_length;
 	uint8_t *rom;
 	uint8_t *rbp;
 	uint8_t *conf;
@@ -244,6 +247,7 @@ struct otp_image_layout {
 	uint8_t *strap_ext;
 	uint8_t *secure;
 	uint8_t *cptra;
+	uint8_t *user;
 };
 
 uint32_t chip_version(void);

@@ -586,6 +586,24 @@ static int otp_print_rom_image(struct otp_image_layout *image_layout)
 	return 0;
 }
 
+static int otp_print_user_image(struct otp_image_layout *image_layout)
+{
+	uint32_t *buf;
+	int size;
+
+	buf = (uint32_t *)image_layout->user;
+	size = image_layout->user_length;
+
+	for (int i = 0; i < size / 4; i++) {
+		if (i % 4 == 0)
+			printf("\n%04x:", i * 4);
+		printf(" %08x", buf[i]);
+	}
+	printf("\n");
+
+	return 0;
+}
+
 static int _otp_print_key(uint32_t header, uint32_t offset, uint8_t *data)
 {
 	const struct otpkey_type *key_info_array = info_cb.key_info;
@@ -1020,6 +1038,9 @@ static int otp_prog_image(char *path, int nconfirm)
 	image_layout.cptra_length = OTP_REGION_SIZE(otp_header->cptra_info);
 	image_layout.cptra = buf + OTP_REGION_OFFSET(otp_header->cptra_info);
 
+	image_layout.user_length = OTP_REGION_SIZE(otp_header->user_info);
+	image_layout.user = buf + OTP_REGION_OFFSET(otp_header->user_info);
+
 	if (otp_header->soc_ver == SOC_AST2700A0) {
 		image_soc_ver = OTP_AST2700_A0;
 	} else if (otp_header->soc_ver == SOC_AST2700A1) {
@@ -1155,6 +1176,14 @@ static int otp_prog_image(char *path, int nconfirm)
 				goto end;
 			}
 		}
+		if (otp_header->image_info & OTP_INC_USER) {
+			printf("\nOTP user region :\n");
+			if (otp_print_user_image(&image_layout) < 0) {
+				printf("OTP user error, please check.\n");
+				ret = OTP_FAILURE;
+				goto end;
+			}
+		}
 
 		printf("type \"YES\" (no quotes) to continue:\n");
 		if (!confirm_yesno()) {
@@ -1215,6 +1244,14 @@ static int otp_prog_image(char *path, int nconfirm)
 	if (otp_header->image_info & OTP_INC_CALIPTRA) {
 		printf("programing caliptra region ...\n");
 		ret = otp_prog_image_region(&image_layout, OTP_REGION_CALIPTRA);
+		if (ret != 0) {
+			printf("Error\n");
+			goto end;
+		}
+	}
+	if (otp_header->image_info & OTP_INC_USER) {
+		printf("programing user region ...\n");
+		ret = otp_prog_image_region(&image_layout, OTP_REGION_USER);
 		if (ret != 0) {
 			printf("Error\n");
 			goto end;
@@ -1445,7 +1482,7 @@ static int do_otppb(int argc, char *const argv[])
 	else if (!strcmp(argv[0], "strap-ext-vld"))
 		mode = OTP_REGION_STRAP_EXT_VLD;
 	else if (!strcmp(argv[0], "u-data"))
-		mode = OTP_REGION_USER_DATA;
+		mode = OTP_REGION_USER;
 	else if (!strcmp(argv[0], "s-data"))
 		mode = OTP_REGION_SECURE;
 	else if (!strcmp(argv[0], "cptra"))
@@ -1537,7 +1574,7 @@ static int do_otppb(int argc, char *const argv[])
 		otp_addr = bit_offset / 16;
 		bit_offset = bit_offset % 16;
 
-	} else if (mode == OTP_REGION_USER_DATA) {
+	} else if (mode == OTP_REGION_USER) {
 		if (otp_addr >= OTP_USER_REGION_SIZE)
 			return CMD_RET_USAGE;
 

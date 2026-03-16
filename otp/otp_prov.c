@@ -114,7 +114,7 @@ int lib_otp_read_data(int mode, int offset, int w_count, uint16_t *output)
 		otp_read_func = otp_read_strap_ext_vld;
 		range = OTP_STRAP_EXT_REGION_SIZE / 2;
 		break;
-	case OTP_REGION_USER_DATA:
+	case OTP_REGION_USER:
 		otp_read_func = otp_read_udata;
 		range = OTP_USER_REGION_SIZE;
 		break;
@@ -287,6 +287,9 @@ int lib_otp_prog_image(char *path)
 	image_layout.cptra_length = OTP_REGION_SIZE(otp_header->cptra_info);
 	image_layout.cptra = buf + OTP_REGION_OFFSET(otp_header->cptra_info);
 
+	image_layout.user_length = OTP_REGION_SIZE(otp_header->user_info);
+	image_layout.user = buf + OTP_REGION_OFFSET(otp_header->user_info);
+
 	if (otp_header->soc_ver == SOC_AST2700A1) {
 		image_soc_ver = OTP_AST2700_A1;
 	} else if (otp_header->soc_ver == SOC_AST2700A2) {
@@ -364,6 +367,14 @@ int lib_otp_prog_image(char *path)
 	if (otp_header->image_info & OTP_INC_CALIPTRA) {
 		printf("programing caliptra region ...\n");
 		ret = otp_prog_image_region(&image_layout, OTP_REGION_CALIPTRA);
+		if (ret != 0) {
+			printf("Error\n");
+			goto end;
+		}
+	}
+	if (otp_header->image_info & OTP_INC_USER) {
+		printf("programing user region ...\n");
+		ret = otp_prog_image_region(&image_layout, OTP_REGION_USER);
 		if (ret != 0) {
 			printf("Error\n");
 			goto end;

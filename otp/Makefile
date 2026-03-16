@@ -20,7 +20,7 @@ CC      = $(CROSS_COMPILE)gcc
 	$(CC) $(CFLAGS) -c $<
 
 $(EXE): $(OBJS) $(SHARED_LIB)
-	$(CC) $(CFLAGS) $(OBJS) -o $@
+	$(CC) $(OBJS) -o $@ $(CFLAGS)
 
 ifeq ($(ARCH),arm64)
 $(SHARED_LIB): lib_otp_ast2700.c otp_prov.c

@@ -469,7 +469,23 @@ int otp_prog_image_region(struct otp_image_layout *image_layout, enum otp_region
 		return OTP_FAILURE;
 	}
 
-	printf("Start Programing...\n");
+	if (region_type == OTP_REGION_RBP) {
+		int is_empty = 1;
+
+		for (int i = 0; i < size / 2; i++) {
+			if (buf[i] != 0) {
+				is_empty = 0;
+				break;
+			}
+		}
+
+		if (is_empty) {
+			printf("RBP region is empty, skip programming\n");
+			return OTP_SUCCESS;
+		}
+	}
+
+	printf("Start Programming...\n");
 	for (int i = 0; i < size / 2; i++) {
 		otp_read_func(i, &otp_value);
 		if (otp_value) {
@@ -505,7 +521,7 @@ int otp_prog_strap_image(struct otp_image_layout *image_layout,
 	strap = (uint32_t *)image_layout->strap;
 	strap_pro = strap + 1;
 
-	printf("Start Programing...\n");
+	printf("Start Programming...\n");
 	for (int i = 0; i < 32; i++) {
 		offset = i;
 		bit = (strap[0] >> offset) & 0x1;
@@ -569,7 +585,7 @@ int otp_prog_strap_ext_image(struct otp_image_layout *image_layout)
 	strap_ext = (uint16_t *)image_layout->strap_ext;
 	strap_ext_vld = strap_ext + 8;
 
-	printf("Start Programing...\n");
+	printf("Start Programming...\n");
 	for (int i = 0; i < 128; i++) {
 		w_offset = i / 16;
 		bit_offset = i % 16;

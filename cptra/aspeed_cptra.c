@@ -21,6 +21,10 @@
 #include "ecdsa.h"
 #include "hash.h"
 #include "lms.h"
+#include <mbedtls/x509_crt.h>
+#include <mbedtls/error.h>
+#include <mbedtls/oid.h>
+#include "ca_cert.h"
 
 // #define DEBUG
 #ifdef DEBUG
@@ -2382,6 +2386,267 @@ end:
 	return ret;
 }
 
+static int get_der_cert_len(const unsigned char *buf, size_t buflen, size_t *cert_len)
+{
+	if (buflen < 2 || buf[0] != 0x30) // Expecting SEQUENCE
+		return -1;
+
+	size_t len = 0;
+	size_t offset = 2;
+
+	if ((buf[1] & 0x80) == 0) {
+		len = buf[1];
+	} else {
+		size_t num_len_bytes = buf[1] & 0x7F;
+
+		if (num_len_bytes > sizeof(size_t) || num_len_bytes + 2 > buflen)
+			return -1;
+
+		len = 0;
+		for (size_t i = 0; i < num_len_bytes; i++)
+			len = (len << 8) | buf[offset++];
+	}
+
+	*cert_len = offset + len;
+	return 0;
+}
+
+static void dump_certificate_der(const unsigned char *buf, size_t buflen)
+{
+	mbedtls_x509_crt cert;
+	mbedtls_x509_crt *cur;
+	size_t offset = 0;
+	int ret;
+	char output_buf[1024];
+
+	mbedtls_x509_crt_init(&cert);
+
+	while (offset < buflen) {
+		size_t cert_len = 0;
+
+		if (get_der_cert_len(buf + offset, buflen - offset, &cert_len) < 0)
+			break;
+
+		dbg_printf("Parsing certificate at buf %p offset %zu, length %zu\n", buf + offset,
+			  offset, cert_len);
+		ret = mbedtls_x509_crt_parse_der(&cert, buf + offset, cert_len);
+		if (ret != 0) {
+			char error_buf[128];
+
+			mbedtls_strerror(ret, error_buf, sizeof(error_buf));
+			printf("Failed to parse certificate: %s\n", error_buf);
+			printf("ERROR CODE %x\n", -ret);
+			goto end;
+		}
+		offset += cert_len;
+	}
+
+	cur = &cert;
+
+	while (cur) {
+		ret = mbedtls_x509_crt_info(output_buf, sizeof(output_buf), "  ", cur);
+		if (ret == -1) {
+			printf("Failed to format certificate info\n");
+			break;
+		}
+		dbg_printf("%s\n", output_buf);
+		cur = cur->next;
+	}
+
+end:
+	mbedtls_x509_crt_free(&cert);
+}
+
+struct ast_cert_ctx {
+	int cert_num_checked;
+};
+
+static int ast_cert_verify_callback(void *data, mbedtls_x509_crt *crt, int depth, uint32_t *flags)
+{
+	struct ast_cert_ctx *ctx = (struct ast_cert_ctx *)data;
+	char buf[512];
+
+	dbg_printf("=== [ASPEED Verify Callback] ===\n");
+	dbg_printf("Depth: %d\n", depth);
+
+	mbedtls_x509_crt_info(buf, sizeof(buf) - 1, "  ", crt);
+	dbg_printf("%s\n", buf);
+
+	ctx->cert_num_checked++;
+
+	return 0;
+}
+
+static int cptra_test_idevid_cert(void)
+{
+	mbedtls_x509_crt root_ca_cert, sub_ca_cert, cert_chain;
+	uint32_t flags;
+	int ret;
+	struct ast_cert_ctx ctx = {0};
+	size_t cert_size = 0;
+	int stack_top = 0;
+	int offset = 0;
+
+	struct stack {
+		uint8_t *data;
+		int size;
+	} cert_chain_stack[5];
+
+	// Populate certificate_chain and certificate_chain_size
+	cptra_test_get_cert_chain();
+
+	/* Dump Root CA Cert */
+	dbg_printf("Dumping ASPEED Root CA certificate...\n");
+	dump_certificate_der(aspeed_root_ca_cert_der, ARRAY_SIZE(aspeed_root_ca_cert_der));
+
+	/* Verify Sub CA by using Root CA cert */
+	printf("Verifying Sub CA certificate...\n");
+	mbedtls_x509_crt_init(&root_ca_cert);
+	ret = mbedtls_x509_crt_parse_der(&root_ca_cert, aspeed_root_ca_cert_der,
+					 ARRAY_SIZE(aspeed_root_ca_cert_der));
+	if (ret) {
+		printf("ASPEED Root CA certificate parse failed, ret:0x%x\n", ret);
+
+		char err[128] = {0};
+
+		mbedtls_strerror(ret, err, sizeof(err));
+		printf("ASPEED CA certificate parse error: %s\n", err);
+		goto cleanup_root;
+	}
+
+	mbedtls_x509_crt_init(&sub_ca_cert);
+	ret = mbedtls_x509_crt_parse_der(&sub_ca_cert, sub_ca_cert_der,
+					 ARRAY_SIZE(sub_ca_cert_der));
+	if (ret) {
+		printf("Sub CA parse failed, ret:0x%x\n", ret);
+
+		char err[128] = {0};
+
+		mbedtls_strerror(ret, err, sizeof(err));
+		printf("Sub CA parse error: %s\n", err);
+		goto cleanup_sub;
+	}
+
+	ret = mbedtls_x509_crt_verify(&sub_ca_cert, &root_ca_cert, NULL, NULL, &flags, NULL, NULL);
+	if (ret) {
+		printf("Sub CA verification failed, ret:0x%x flags=%x\n",
+			  ret, flags);
+
+		char err[128] = {0};
+
+		mbedtls_strerror(ret, err, sizeof(err));
+		printf("Sub CA verification error: %s\n", err);
+		goto cleanup_sub;
+	} else {
+		printf("Sub CA verified by ASPEED Root CA successfully !!!\n");
+	}
+
+	/* Reverse Cert Chain */
+	dbg_printf("Reversing Cert Chain...\n");
+	mbedtls_x509_crt_init(&cert_chain);
+
+	while (offset < certificate_chain_size) {
+		if (stack_top >= (int)ARRAY_SIZE(cert_chain_stack)) {
+			printf("Cert chain stack overflow\n");
+			goto cleanup_cert;
+		}
+
+		if (get_der_cert_len(certificate_chain + offset, certificate_chain_size - offset,
+				     &cert_size) < 0) {
+			printf("Failed to get DER cert length at offset %d\n", offset);
+			goto cleanup_cert;
+		}
+
+		if (cert_size <= 0 || cert_size > (size_t)(certificate_chain_size - offset)) {
+			printf("Invalid cert size %zu at offset %d\n", cert_size, offset);
+			goto cleanup_cert;
+		}
+
+		cert_chain_stack[stack_top].data = certificate_chain + offset;
+		cert_chain_stack[stack_top].size = cert_size;
+		dbg_printf("Cert %d: size=%zu, offset=%d\n", stack_top, cert_size, offset);
+		offset += cert_size;
+		stack_top++;
+	}
+
+	while (stack_top > 0) {
+		stack_top--;
+		dbg_printf("Cert %d: size=%d\n", stack_top, cert_chain_stack[stack_top].size);
+		dump_certificate_der(cert_chain_stack[stack_top].data,
+				     cert_chain_stack[stack_top].size);
+
+		ret = mbedtls_x509_crt_parse_der_nocopy(&cert_chain,
+							cert_chain_stack[stack_top].data,
+							cert_chain_stack[stack_top].size);
+		if (ret) {
+			printf("Certificate chain parse failed, ret:0x%x\n", ret);
+
+			char err[128] = {0};
+
+			mbedtls_strerror(ret, err, sizeof(err));
+			printf("Certificate chain parse error: %s\n", err);
+			goto cleanup_cert;
+		}
+	}
+
+	/* Verify Certificate Chain by using CA cert */
+	printf("Verifying certificate chain...\n");
+	ret = mbedtls_x509_crt_verify(&cert_chain, &sub_ca_cert, NULL, NULL, &flags,
+				      ast_cert_verify_callback, &ctx);
+	if (ret) {
+		printf("Certificate chain verification failed, ret:0x%x flags=%x\n",
+			  ret, flags);
+
+		char err[128] = {0};
+
+		mbedtls_strerror(ret, err, sizeof(err));
+		printf("Certificate chain verification error: %s\n", err);
+	}
+
+	if (ctx.cert_num_checked == 0x5) {
+		printf("Certificate chain verified by Sub CA successfully !!!\n");
+	} else {
+		printf("Certificate chain verification failed, checked %d/5 certs\n",
+			  ctx.cert_num_checked);
+		ret = -1;
+	}
+
+cleanup_cert:
+	mbedtls_x509_crt_free(&cert_chain);
+cleanup_sub:
+	mbedtls_x509_crt_free(&sub_ca_cert);
+cleanup_root:
+	mbedtls_x509_crt_free(&root_ca_cert);
+
+	return ret;
+}
+
+static int cptra_test_cert_chain_wrapper(void)
+{
+	int ret;
+
+	ret = cptra_test_idevid_cert();
+	if (!ret) {
+		printf("\n"
+			"______________________________________________\n"
+			"___  __ \\__    |_  ___/_  ___/__  ____/__  __ \\\n"
+			"__  /_/ /_  /| |____ \\_____ \\__  __/  __  / / /\n"
+			"_  ____/_  ___ |___/ /____/ /_  /___  _  /_/ /\n"
+			"/_/     /_/  |_/____/ /____/ /_____/  /_____/\n"
+			);
+	} else {
+		printf("\n"
+			"______________________________________________\n"
+			"___  ____/__    |___  _/__  /___  ____/__  __ \\\n"
+			"__  /_   __  /| |__  / __  / __  __/  __  / / /\n"
+			"_  __/   _  ___ |_/ /  _  /___  /___  _  /_/ /\n"
+			"/_/      /_/  |_/___/  /_____/_____/  /_____/\n"
+			);
+	}
+
+	return ret;
+}
+
 typedef int (*cptra_test_func_t)(void);
 
 struct cptra_test_entry {
@@ -2421,6 +2686,7 @@ static struct cptra_test_entry cptra_tests[] = {
 	{ "fw_info",				cptra_test_fw_info },
 	{ "capabilities",			cptra_test_capabilities },
 	{ "version",				cptra_test_version },
+	{ "cert_chain_verify",			cptra_test_cert_chain_wrapper },
 	// Add more test functions here as needed
 };
 

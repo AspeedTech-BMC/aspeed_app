@@ -62,15 +62,19 @@ executable('hid_gadget_app', 'usb/hid_gadget_test.c', install: true)
 if host_machine.cpu_family() == 'aarch64'
   mbedtls_inc = include_directories('lib/mbedtls/include')
   mbedtls_lib_dir = meson.current_source_dir() / 'lib' / 'mbedtls' / 'library'
+  mbedtls_user_cfg = meson.current_source_dir() / 'cptra' / 'mbedtls_user_config.h'
+  mbedtls_cflags = '-DMBEDTLS_USER_CONFIG_FILE=\\"' + mbedtls_user_cfg + '\\"'
   mbedtls_make = custom_target('mbedtls_lib',
     output: ['libmbedcrypto.a', 'libmbedx509.a', 'libmbedtls.a'],
-    command: ['sh', '-c', 'make -C @0@ lib && cp @1@/*.a @OUTDIR@/'.format(
+    command: ['sh', '-c', 'make -C @0@ lib CFLAGS="@2@" && cp @1@/*.a @OUTDIR@/'.format(
       meson.current_source_dir() / 'lib' / 'mbedtls',
-      meson.current_source_dir() / 'lib' / 'mbedtls' / 'library'
+      meson.current_source_dir() / 'lib' / 'mbedtls' / 'library',
+      mbedtls_cflags
     )],
     build_by_default: true)
 
   executable('aspeed_cptra', 'cptra/aspeed_cptra.c', mbedtls_make,
     install: true,
-    include_directories: mbedtls_inc)
+    include_directories: mbedtls_inc,
+    c_args: ['-DMBEDTLS_USER_CONFIG_FILE="' + mbedtls_user_cfg + '"'])
 endif

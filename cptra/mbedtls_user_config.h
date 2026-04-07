@@ -1,0 +1,205 @@
+/* SPDX-License-Identifier: GPL-2.0 */
+
+/*
+ * Minimum mbedtls user config for aspeed-cptra.
+ *
+ * This file is included after the default mbedtls_config.h via
+ * MBEDTLS_USER_CONFIG_FILE. It undefs all unnecessary modules to
+ * produce a minimal build for X.509 certificate parsing & verification.
+ *
+ * Used APIs:
+ *   - mbedtls_x509_crt_parse_der / parse_der_nocopy
+ *   - mbedtls_x509_crt_verify
+ *   - mbedtls_x509_crt_info
+ *   - mbedtls_strerror
+ *   - mbedtls/oid.h
+ */
+
+#ifndef ASPEED_CPTRA_MBEDTLS_USER_CONFIG_H
+#define ASPEED_CPTRA_MBEDTLS_USER_CONFIG_H
+
+/*
+ * Disable time support - BMC RTC may not be set correctly at
+ * boot, which would cause cert validity period check failures.
+ */
+#undef MBEDTLS_HAVE_TIME
+#undef MBEDTLS_HAVE_TIME_DATE
+
+/*
+ * Disable SSL/TLS and networking - not needed
+ */
+#undef MBEDTLS_SSL_TLS_C
+#undef MBEDTLS_SSL_CLI_C
+#undef MBEDTLS_SSL_SRV_C
+#undef MBEDTLS_SSL_CACHE_C
+#undef MBEDTLS_SSL_COOKIE_C
+#undef MBEDTLS_SSL_TICKET_C
+#undef MBEDTLS_NET_C
+#undef MBEDTLS_TIMING_C
+
+/* Disable all SSL protocol versions */
+#undef MBEDTLS_SSL_PROTO_TLS1_2
+#undef MBEDTLS_SSL_PROTO_TLS1_3
+#undef MBEDTLS_SSL_PROTO_DTLS
+
+/* Disable SSL features */
+#undef MBEDTLS_SSL_ALPN
+#undef MBEDTLS_SSL_DTLS_ANTI_REPLAY
+#undef MBEDTLS_SSL_DTLS_HELLO_VERIFY
+#undef MBEDTLS_SSL_DTLS_SRTP
+#undef MBEDTLS_SSL_DTLS_CLIENT_PORT_REUSE
+#undef MBEDTLS_SSL_ENCRYPT_THEN_MAC
+#undef MBEDTLS_SSL_EXTENDED_MASTER_SECRET
+#undef MBEDTLS_SSL_MAX_FRAGMENT_LENGTH
+#undef MBEDTLS_SSL_RENEGOTIATION
+#undef MBEDTLS_SSL_SERVER_NAME_INDICATION
+#undef MBEDTLS_SSL_SESSION_TICKETS
+#undef MBEDTLS_SSL_EARLY_DATA
+#undef MBEDTLS_SSL_RECORD_SIZE_LIMIT
+#undef MBEDTLS_SSL_TLS1_3_KEY_EXCHANGE_MODE_PSK_ENABLED
+#undef MBEDTLS_SSL_TLS1_3_KEY_EXCHANGE_MODE_EPHEMERAL_ENABLED
+#undef MBEDTLS_SSL_TLS1_3_KEY_EXCHANGE_MODE_PSK_EPHEMERAL_ENABLED
+#undef MBEDTLS_SSL_TLS1_3_COMPATIBILITY_MODE
+
+/*
+ * Disable unused symmetric ciphers
+ */
+#undef MBEDTLS_AES_C
+#undef MBEDTLS_ARIA_C
+#undef MBEDTLS_CAMELLIA_C
+#undef MBEDTLS_DES_C
+#undef MBEDTLS_CHACHA20_C
+#undef MBEDTLS_CHACHAPOLY_C
+#undef MBEDTLS_POLY1305_C
+#undef MBEDTLS_CIPHER_C
+#undef MBEDTLS_CCM_C
+#undef MBEDTLS_GCM_C
+#undef MBEDTLS_CMAC_C
+#undef MBEDTLS_NIST_KW_C
+#undef MBEDTLS_CIPHER_MODE_CBC
+#undef MBEDTLS_CIPHER_MODE_CFB
+#undef MBEDTLS_CIPHER_MODE_CTR
+#undef MBEDTLS_CIPHER_MODE_OFB
+#undef MBEDTLS_CIPHER_MODE_XTS
+#undef MBEDTLS_CIPHER_PADDING_PKCS7
+#undef MBEDTLS_CIPHER_PADDING_ONE_AND_ZEROS
+#undef MBEDTLS_CIPHER_PADDING_ZEROS_AND_LEN
+#undef MBEDTLS_CIPHER_PADDING_ZEROS
+
+/*
+ * Disable unused hash algorithms (keep SHA-256/384/512)
+ */
+#undef MBEDTLS_MD5_C
+#undef MBEDTLS_SHA1_C
+#undef MBEDTLS_SHA3_C
+#undef MBEDTLS_RIPEMD160_C
+
+/*
+ * Disable unused ECC curves (keep SECP256R1, SECP384R1)
+ */
+#undef MBEDTLS_ECP_DP_SECP192R1_ENABLED
+#undef MBEDTLS_ECP_DP_SECP224R1_ENABLED
+#undef MBEDTLS_ECP_DP_SECP521R1_ENABLED
+#undef MBEDTLS_ECP_DP_SECP192K1_ENABLED
+#undef MBEDTLS_ECP_DP_SECP224K1_ENABLED
+#undef MBEDTLS_ECP_DP_SECP256K1_ENABLED
+#undef MBEDTLS_ECP_DP_BP256R1_ENABLED
+#undef MBEDTLS_ECP_DP_BP384R1_ENABLED
+#undef MBEDTLS_ECP_DP_BP512R1_ENABLED
+#undef MBEDTLS_ECP_DP_CURVE25519_ENABLED
+#undef MBEDTLS_ECP_DP_CURVE448_ENABLED
+
+/*
+ * Disable unused key exchange / DH
+ */
+#undef MBEDTLS_DHM_C
+#undef MBEDTLS_ECDH_C
+#undef MBEDTLS_ECJPAKE_C
+#undef MBEDTLS_KEY_EXCHANGE_PSK_ENABLED
+#undef MBEDTLS_KEY_EXCHANGE_DHE_PSK_ENABLED
+#undef MBEDTLS_KEY_EXCHANGE_ECDHE_PSK_ENABLED
+#undef MBEDTLS_KEY_EXCHANGE_RSA_PSK_ENABLED
+#undef MBEDTLS_KEY_EXCHANGE_RSA_ENABLED
+#undef MBEDTLS_KEY_EXCHANGE_DHE_RSA_ENABLED
+#undef MBEDTLS_KEY_EXCHANGE_ECDHE_RSA_ENABLED
+#undef MBEDTLS_KEY_EXCHANGE_ECDHE_ECDSA_ENABLED
+#undef MBEDTLS_KEY_EXCHANGE_ECDH_ECDSA_ENABLED
+#undef MBEDTLS_KEY_EXCHANGE_ECDH_RSA_ENABLED
+#undef MBEDTLS_ECDSA_DETERMINISTIC
+
+/*
+ * Disable unused modules
+ */
+#undef MBEDTLS_HKDF_C
+#undef MBEDTLS_HMAC_DRBG_C
+#undef MBEDTLS_PKCS5_C
+#undef MBEDTLS_PKCS7_C
+#undef MBEDTLS_PKCS12_C
+#undef MBEDTLS_LMS_C
+#undef MBEDTLS_PADLOCK_C
+#undef MBEDTLS_VERSION_C
+#undef MBEDTLS_DEBUG_C
+
+/* Disable X.509 features we don't need */
+#undef MBEDTLS_X509_CRL_PARSE_C
+#undef MBEDTLS_X509_CSR_PARSE_C
+#undef MBEDTLS_X509_CREATE_C
+#undef MBEDTLS_X509_CRT_WRITE_C
+#undef MBEDTLS_X509_CSR_WRITE_C
+#undef MBEDTLS_PEM_WRITE_C
+#undef MBEDTLS_PK_WRITE_C
+
+/* Disable PSA crypto subsystem */
+#undef MBEDTLS_PSA_CRYPTO_C
+#undef MBEDTLS_PSA_CRYPTO_STORAGE_C
+#undef MBEDTLS_PSA_ITS_FILE_C
+
+/* Disable entropy/DRBG (not needed without PSA/TLS) */
+#undef MBEDTLS_ENTROPY_C
+#undef MBEDTLS_CTR_DRBG_C
+
+/* Disable threading (single-threaded use) */
+#undef MBEDTLS_THREADING_C
+
+/* Disable memory buffer allocator */
+#undef MBEDTLS_MEMORY_BUFFER_ALLOC_C
+
+/* Disable self-test */
+#undef MBEDTLS_SELF_TEST
+
+/* Disable version features (requires VERSION_C) */
+#undef MBEDTLS_VERSION_FEATURES
+
+/* Disable SSL context serialization */
+#undef MBEDTLS_SSL_CONTEXT_SERIALIZATION
+
+/*
+ * Modules kept enabled (inherited from default config):
+ *
+ *   MBEDTLS_HAVE_ASM
+ *   MBEDTLS_ECP_NIST_OPTIM
+ *   MBEDTLS_PLATFORM_C
+ *   MBEDTLS_BIGNUM_C
+ *   MBEDTLS_ASN1_PARSE_C
+ *   MBEDTLS_ASN1_WRITE_C
+ *   MBEDTLS_OID_C
+ *   MBEDTLS_BASE64_C
+ *   MBEDTLS_PEM_PARSE_C
+ *   MBEDTLS_PK_C
+ *   MBEDTLS_PK_PARSE_C
+ *   MBEDTLS_RSA_C
+ *   MBEDTLS_ECP_C
+ *   MBEDTLS_ECDSA_C
+ *   MBEDTLS_ECP_DP_SECP256R1_ENABLED
+ *   MBEDTLS_ECP_DP_SECP384R1_ENABLED
+ *   MBEDTLS_MD_C
+ *   MBEDTLS_SHA224_C
+ *   MBEDTLS_SHA256_C
+ *   MBEDTLS_SHA384_C
+ *   MBEDTLS_SHA512_C
+ *   MBEDTLS_X509_USE_C
+ *   MBEDTLS_X509_CRT_PARSE_C
+ *   MBEDTLS_ERROR_C
+ */
+
+#endif /* ASPEED_CPTRA_MBEDTLS_USER_CONFIG_H */

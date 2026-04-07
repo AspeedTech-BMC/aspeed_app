@@ -27,8 +27,10 @@ ifeq ($(ARCH),arm64)
 
 all: $(EXE)
 
+MBEDTLS_USER_CFG = $(abspath mbedtls_user_config.h)
+
 $(MBEDTLS_LIBS):
-	$(MAKE) -C $(MBEDTLS_DIR) lib CC="$(CROSS_COMPILE)gcc" AR="$(CROSS_COMPILE)ar"
+	$(MAKE) -C $(MBEDTLS_DIR) lib CC="$(CROSS_COMPILE)gcc" AR="$(CROSS_COMPILE)ar" CFLAGS='-DMBEDTLS_USER_CONFIG_FILE=\"$(MBEDTLS_USER_CFG)\"'
 
 $(EXE): $(OBJS) $(MBEDTLS_LIBS)
 	$(CC) $(CFLAGS) $(OBJS) $(MBEDTLS_LIBS) -o $@

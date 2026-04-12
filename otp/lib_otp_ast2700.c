@@ -488,17 +488,18 @@ int otp_prog_image_region(struct otp_image_layout *image_layout, enum otp_region
 	printf("Start Programming...\n");
 	for (int i = 0; i < size / 2; i++) {
 		otp_read_func(i, &otp_value);
-		if (otp_value) {
-			if (otp_value != buf[i])
-				printf("Warning: OTP region w_offset [0x%x]=0x%x prog to 0x%x\n",
-				       i, otp_value, buf[i]);
-			continue;
-		} else {
-			ret = otp_prog_data(region_type, i, 0, buf[i], 1, false);
-			if (ret) {
-				printf("%s: Prog Failed, ret:0x%x\n", __func__, ret);
-				return ret;
-			}
+
+		/* Show warning if OTP value is not 0 and different from image data,
+		 * which may indicate the OTP bit has been programmed before
+		 */
+		if (otp_value && buf[i] && otp_value != buf[i])
+			printf("Warning: OTP region w_offset [0x%x]=0x%x prog to 0x%x\n",
+			       i, otp_value, buf[i]);
+
+		ret = otp_prog_data(region_type, i, 0, buf[i], 1, false);
+		if (ret) {
+			printf("%s: Prog Failed, ret:0x%x\n", __func__, ret);
+			return ret;
 		}
 	}
 	printf("Done\n");

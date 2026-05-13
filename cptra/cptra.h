@@ -417,7 +417,7 @@ struct cptra_invoke_dpe_command_oa {
 	uint32_t chksum;
 	uint32_t fips_status;
 	uint32_t data_size;
-	uint8_t data[2304];
+	uint8_t data[4096];
 };
 
 #define CPTRA_IMC_ENTRY_COUNT			127	/* Max IMC entry count */

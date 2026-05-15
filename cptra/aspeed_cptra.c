@@ -54,6 +54,9 @@
 #define IDEVID_CSR_SIZE				0x1c0
 #define PAGE_SIZE				0x1000
 
+#define CPTRA_IFC_BASE				0x14c70000
+#define CPTRA_FW_EXTENDED_ERROR_INFO0_OFFSET	0x18
+
 #define MAP_SIZE				4096UL
 #define MAP_MASK				(MAP_SIZE - 1)
 
@@ -69,6 +72,72 @@ static uint32_t gbl_chip_rid;
 static volatile uint8_t *shared_mem_in;
 static uint8_t certificate_chain[4096] = {0};
 static int certificate_chain_size;
+
+static void *map_phys(off_t offset, size_t len);
+
+static const char *cptra_dpe_validation_error_name(uint32_t error)
+{
+	if ((error & 0xffff0000) != 0x03000000)
+		return NULL;
+
+	switch (error & 0xffff) {
+	case 0x0: return "MultipleNormalConnectedComponents";
+	case 0x1: return "CyclesInTree";
+	case 0x2: return "InactiveContextInvalidParent";
+	case 0x3: return "InactiveContextWithChildren";
+	case 0x4: return "BadContextState";
+	case 0x5: return "BadContextType";
+	case 0x6: return "InactiveContextWithMeasurement";
+	case 0x7: return "MixedContextLocality";
+	case 0x8: return "MultipleDefaultContexts";
+	case 0x9: return "SimulationNotSupported";
+	case 0xa: return "ParentDoesNotExist";
+	case 0xb: return "InternalDiceNotSupported";
+	case 0xc: return "InternalInfoNotSupported";
+	case 0xd: return "ChildDoesNotExist";
+	case 0xe: return "InactiveContextWithFlagSet";
+	case 0xf: return "LocalityMismatch";
+	case 0x10: return "DanglingRetiredContext";
+	case 0x11: return "MixedContextTypeConnectedComponents";
+	case 0x12: return "ChildWithMultipleParents";
+	case 0x13: return "ParentChildLinksCorrupted";
+	case 0x14: return "AllowCaNotSupported";
+	case 0x15: return "AllowX509NotSupported";
+	case 0x16: return "InactiveParent";
+	case 0x17: return "InactiveChild";
+	case 0x18: return "DpeNotMarkedInitialized";
+	default: return "UnknownDpeValidationError";
+	}
+}
+
+static void cptra_dump_fw_error_regs_if_nonzero(void)
+{
+	volatile uint32_t *ifc = (volatile uint32_t *)map_phys(CPTRA_IFC_BASE, PAGE_SIZE);
+	const char *validation_error;
+	uint32_t fw_error[4];
+	uint32_t ext0;
+
+	if (!ifc) {
+		printf("Failed to map Caliptra IFC registers\n");
+		return;
+	}
+
+	for (int i = 0; i < 4; i++)
+		fw_error[i] = ifc[i];
+	ext0 = ifc[CPTRA_FW_EXTENDED_ERROR_INFO0_OFFSET / sizeof(uint32_t)];
+
+	if (fw_error[0] || fw_error[1] || fw_error[2] || fw_error[3] || ext0) {
+		printf("CPTRA IFC error regs[0..3]: 0x%08x 0x%08x 0x%08x 0x%08x\n",
+		       fw_error[0], fw_error[1], fw_error[2], fw_error[3]);
+		printf("CPTRA_FW_EXTENDED_ERROR_INFO[0]: 0x%08x", ext0);
+		validation_error = cptra_dpe_validation_error_name(ext0);
+		if (validation_error)
+			printf(" (%s)", validation_error);
+		printf("\n");
+	}
+
+	munmap((void *)ifc, PAGE_SIZE);
+}
 
 void safe_memcpy(volatile uint8_t *dst, volatile uint8_t *src, size_t len)
 {
@@ -295,6 +364,12 @@ static int cptra_dpe_response_check(struct dpe_rsp_header *header)
 	return 0;
 }
 
+static void cptra_print_dpe_failure(struct dpe_rsp_header *header)
+{
+	printf("DPE command failed, magic:0x%08x status:0x%08x profile:0x%08x\n",
+	       header->magic, header->status, header->profile);
+}
+
 static int cptra_test_invoke_dpe_command_get_profile(void)
 {
 	uint8_t *p8_bmcu_out = (uint8_t *)IPC_CHANNEL_1_BOOTMCU_OUT_ADDR;
@@ -327,10 +402,8 @@ static int cptra_test_invoke_dpe_command_get_profile(void)
 		printf("caliptra_invoke_dpe_command is failure, ret:0x%x\n", ret);
 
 	} else if (cptra_dpe_response_check(&get_profile_output->rsp_hdr)) {
-		printf("DPE command failed, magic:0x%08x status:0x%08x profile:0x%08x\n",
-		       get_profile_output->rsp_hdr.magic,
-		       get_profile_output->rsp_hdr.status,
-		       get_profile_output->rsp_hdr.profile);
+		cptra_print_dpe_failure(&get_profile_output->rsp_hdr);
+		ret = -1;
 
 	} else {
 		dbg_printf("Success\n");
@@ -349,7 +422,7 @@ static int cptra_test_invoke_dpe_command_get_profile(void)
 	return ret;
 }
 
-__attribute__((__unused__)) static void cptra_test_invoke_dpe_command_initialize_context(void)
+static int cptra_test_invoke_dpe_command_initialize_context(uint8_t *context_handle)
 {
 	uint8_t *p8_bmcu_out = (uint8_t *)IPC_CHANNEL_1_BOOTMCU_OUT_ADDR;
 	uint8_t *p8_bmcu_in = (uint8_t *)IPC_CHANNEL_1_BOOTMCU_IN_ADDR;
@@ -371,7 +444,7 @@ __attribute__((__unused__)) static void cptra_test_invoke_dpe_command_initialize
 	initialize_context_input->cmd_hdr.magic = DPE_COMMAND_MAGIC;
 	initialize_context_input->cmd_hdr.cmd = INITIALIZE_CONTEXT;
 	initialize_context_input->cmd_hdr.profile = p384sha384;
-	initialize_context_input->init_ctx_cmd = BIT(30); // DEFAULT_FLAG_MASK
+	initialize_context_input->init_ctx_cmd = BIT(31); // SIMULATION_FLAG_MASK
 	input.data_size = sizeof(struct dpe_initialize_context_i);
 
 	initialize_context_output = (struct dpe_new_context_o *)output.data;
@@ -385,21 +458,23 @@ __attribute__((__unused__)) static void cptra_test_invoke_dpe_command_initialize
 		       ret);
 
 	} else if (cptra_dpe_response_check(&initialize_context_output->rsp_hdr)) {
-		printf("DPE command failed, magic:0x%08x status:0x%08x profile:0x%08x\n",
-		       initialize_context_output->rsp_hdr.magic,
-		       initialize_context_output->rsp_hdr.status,
-		       initialize_context_output->rsp_hdr.profile);
+		cptra_print_dpe_failure(&initialize_context_output->rsp_hdr);
+		ret = -1;
 
 	} else {
 		dbg_printf("Success\n");
 		dbg_hexdump(initialize_context_output->context_handle,
 			    sizeof(initialize_context_output->context_handle),
 			    "context_handle:");
+		memcpy(context_handle, initialize_context_output->context_handle,
+		       sizeof(initialize_context_output->context_handle));
 	}
+
+	return ret;
 }
 
-static int
-cptra_test_invoke_dpe_command_derive_context(uint8_t *dervied_context)
+__attribute__((__unused__)) static int
+cptra_test_invoke_dpe_command_derive_context(uint8_t *input_context, uint8_t *dervied_context)
 {
 	uint8_t *p8_bmcu_out = (uint8_t *)IPC_CHANNEL_1_BOOTMCU_OUT_ADDR;
 	uint8_t *p8_bmcu_in = (uint8_t *)IPC_CHANNEL_1_BOOTMCU_IN_ADDR;
@@ -421,10 +496,10 @@ cptra_test_invoke_dpe_command_derive_context(uint8_t *dervied_context)
 	derive_context_input->cmd_hdr.magic = DPE_COMMAND_MAGIC;
 	derive_context_input->cmd_hdr.cmd = DERIVE_CONTEXT;
 	derive_context_input->cmd_hdr.profile = p384sha384;
-	derive_context_input->flags = BIT(25) | BIT(26) | BIT(30) | BIT(31); // INPUT_ALLOW_X509 |
-									     // INPUT_ALLOW_CA |
-									     // INPUT_DICE |
-									     // INPUT_INFO
+	memcpy(derive_context_input->handle, input_context, sizeof(derive_context_input->handle));
+	derive_context_input->flags = INPUT_ALLOW_X509 | INPUT_ALLOW_CA |
+				      INTERNAL_INPUT_DICE |
+				      INTERNAL_INPUT_INFO;
 	input.data_size = sizeof(struct dpe_derive_context_i);
 
 	derive_context_output = (struct dpe_derive_context_o *)output.data;
@@ -436,10 +511,8 @@ cptra_test_invoke_dpe_command_derive_context(uint8_t *dervied_context)
 		printf("caliptra_invoke_dpe_command is failure, ret:0x%x\n", ret);
 
 	} else if (cptra_dpe_response_check(&derive_context_output->rsp_hdr)) {
-		printf("DPE command failed, magic:0x%08x status:0x%08x profile:0x%08x\n",
-		       derive_context_output->rsp_hdr.magic,
-		       derive_context_output->rsp_hdr.status,
-		       derive_context_output->rsp_hdr.profile);
+		cptra_print_dpe_failure(&derive_context_output->rsp_hdr);
+		ret = -1;
 
 	} else {
 		dbg_printf("Success\n");
@@ -456,7 +529,7 @@ cptra_test_invoke_dpe_command_derive_context(uint8_t *dervied_context)
 	return ret;
 }
 
-void cptra_test_invoke_dpe_command_derive_context_exported_cdi(uint8_t *derived_context)
+int cptra_test_invoke_dpe_command_derive_context_exported_cdi(uint8_t *derived_context)
 {
 	uint8_t *p8_bmcu_out = (uint8_t *)IPC_CHANNEL_1_BOOTMCU_OUT_ADDR;
 	uint8_t *p8_bmcu_in = (uint8_t *)IPC_CHANNEL_1_BOOTMCU_IN_ADDR;
@@ -478,7 +551,8 @@ void cptra_test_invoke_dpe_command_derive_context_exported_cdi(uint8_t *derived_
 	derive_context_input->cmd_hdr.magic = DPE_COMMAND_MAGIC;
 	derive_context_input->cmd_hdr.cmd = DERIVE_CONTEXT;
 	derive_context_input->cmd_hdr.profile = p384sha384;
-	derive_context_input->flags = EXPORT_CDI | CREATE_CERTIFICATE;
+	derive_context_input->flags = EXPORT_CDI | CREATE_CERTIFICATE |
+				      RETAIN_PARENT_CONTEXT;
 	input.data_size = sizeof(struct dpe_derive_context_i);
 
 	derive_context_output = (struct dpe_derive_context_exported_cdi_o *)output.data;
@@ -490,10 +564,8 @@ void cptra_test_invoke_dpe_command_derive_context_exported_cdi(uint8_t *derived_
 		printf("caliptra_invoke_dpe_command is failure, ret:0x%x\n", ret);
 
 	} else if (cptra_dpe_response_check(&derive_context_output->rsp_hdr)) {
-		printf("DPE command failed, magic:0x%08x status:0x%08x profile:0x%08x\n",
-		       derive_context_output->rsp_hdr.magic,
-		       derive_context_output->rsp_hdr.status,
-		       derive_context_output->rsp_hdr.profile);
+		cptra_print_dpe_failure(&derive_context_output->rsp_hdr);
+		ret = -1;
 
 	} else {
 		dbg_printf("Success\n");
@@ -512,6 +584,8 @@ void cptra_test_invoke_dpe_command_derive_context_exported_cdi(uint8_t *derived_
 		memcpy(derived_context, derive_context_output->exported_cdi,
 		       sizeof(derive_context_output->exported_cdi));
 	}
+
+	return ret;
 }
 
 static int cptra_test_invoke_dpe_command_rotate_context(uint8_t *context_handle,
@@ -552,10 +626,8 @@ static int cptra_test_invoke_dpe_command_rotate_context(uint8_t *context_handle,
 		goto end;
 
 	} else if (cptra_dpe_response_check(&rotate_context_handle_output->rsp_hdr)) {
-		printf("DPE command failed, magic:0x%08x status:0x%08x profile:0x%08x\n",
-		       rotate_context_handle_output->rsp_hdr.magic,
-		       rotate_context_handle_output->rsp_hdr.status,
-		       rotate_context_handle_output->rsp_hdr.profile);
+		cptra_print_dpe_failure(&rotate_context_handle_output->rsp_hdr);
+		ret = -1;
 
 	} else {
 		dbg_printf("Success\n");
@@ -606,10 +678,8 @@ static int cptra_test_invoke_dpe_command_destroy_context(uint8_t *context_handle
 		printf("caliptra_invoke_dpe_command is failure, ret:0x%x\n", ret);
 
 	} else if (cptra_dpe_response_check(&destroy_context_output->rsp_hdr)) {
-		printf("DPE command failed, magic:0x%08x status:0x%08x profile:0x%08x\n",
-		       destroy_context_output->rsp_hdr.magic,
-		       destroy_context_output->rsp_hdr.status,
-		       destroy_context_output->rsp_hdr.profile);
+		cptra_print_dpe_failure(&destroy_context_output->rsp_hdr);
+		ret = -1;
 
 	} else {
 		dbg_printf("Success\n");
@@ -656,10 +726,8 @@ static int cptra_test_invoke_dpe_command_certify_key(uint8_t *context_handle,
 		printf("caliptra_invoke_dpe_command is failure, ret:0x%x\n", ret);
 
 	} else if (cptra_dpe_response_check(&certify_key_output->rsp_hdr)) {
-		printf("DPE command failed, magic:0x%08x status:0x%08x profile:0x%08x\n",
-		       certify_key_output->rsp_hdr.magic,
-		       certify_key_output->rsp_hdr.status,
-		       certify_key_output->rsp_hdr.profile);
+		cptra_print_dpe_failure(&certify_key_output->rsp_hdr);
+		ret = -1;
 
 	} else {
 		printf("DPE command CERTIFY_KEY Success\n");
@@ -722,9 +790,8 @@ static int cptra_test_invoke_dpe_command_sign(uint8_t *context_handle, uint8_t *
 		printf("caliptra_invoke_dpe_command is failure, ret:0x%x\n", ret);
 
 	} else if (cptra_dpe_response_check(&sign_output->rsp_hdr)) {
-		printf("DPE command failed, magic:0x%08x status:0x%08x profile:0x%08x\n",
-		       sign_output->rsp_hdr.magic, sign_output->rsp_hdr.status,
-		       sign_output->rsp_hdr.profile);
+		cptra_print_dpe_failure(&sign_output->rsp_hdr);
+		ret = -1;
 
 	} else {
 		dbg_printf("Success\n");
@@ -782,6 +849,11 @@ static int cptra_test_invoke_dpe_command_get_certificate_chain(bool debug)
 			printf("caliptra_invoke_dpe_command is failure, ret:0x%x\n", ret);
 			goto end;
 
+		} else if (cptra_dpe_response_check(&get_certificate_chain_output->rsp_hdr)) {
+			cptra_print_dpe_failure(&get_certificate_chain_output->rsp_hdr);
+			ret = -1;
+			goto end;
+
 		} else {
 			printf("Successful offset=%u size=%u\n", offset,
 			       get_certificate_chain_output->size);
@@ -820,34 +892,48 @@ static int cptra_test_invoke_dpe_command(void)
 
 	printf("Test caliptra_invoke_dpe_command...\n");
 
-	uint8_t derived_context[16] = {0};
+	uint8_t derived_context[32] = {0};
 	uint8_t rotated_context[16] = {0};
 	uint8_t default_context[16] = {0};
 	uint8_t certify_context[16] = {0};
+	uint8_t simulation_context[16] = {0};
 	uint8_t public_key[97] = {0};
 
 	// 0x04 is the prefix for uncompressed public key
 	public_key[0] = 0x04;
 
 	ret = cptra_test_invoke_dpe_command_get_profile();
-	ret += cptra_test_invoke_dpe_command_get_certificate_chain(false);
+	if (ret)
+		return ret;
+
+	ret = cptra_test_invoke_dpe_command_get_certificate_chain(false);
+	if (ret)
+		return ret;
 
 	// Default Context
-	ret += cptra_test_invoke_dpe_command_certify_key(default_context, 0, public_key + 1, certify_context);
-	ret += cptra_test_invoke_dpe_command_sign(default_context, public_key);
+	ret = cptra_test_invoke_dpe_command_certify_key(default_context, 0, public_key + 1, certify_context);
+	if (ret)
+		return ret;
 
-	// Dervied Context
-	ret += cptra_test_invoke_dpe_command_derive_context(derived_context);
-	ret += cptra_test_invoke_dpe_command_certify_key(derived_context, 0, public_key + 1, certify_context);
-	ret += cptra_test_invoke_dpe_command_sign(certify_context, public_key);
+	ret = cptra_test_invoke_dpe_command_sign(default_context, public_key);
+	if (ret)
+		return ret;
 
-	// Rotated Context
-	ret += cptra_test_invoke_dpe_command_rotate_context(certify_context, rotated_context);
-	ret += cptra_test_invoke_dpe_command_certify_key(rotated_context, 0, public_key + 1, certify_context);
-	ret += cptra_test_invoke_dpe_command_sign(certify_context, public_key);
+	// Derived Context - EXPORT_CDI keeps parent ACTIVE and DPE state unchanged
+	ret = cptra_test_invoke_dpe_command_derive_context_exported_cdi(derived_context);
+	if (ret)
+		return ret;
 
-	// Destroy Context
-	ret += cptra_test_invoke_dpe_command_destroy_context(certify_context);
+	// Isolated simulation context for RotateContext and DestroyContext.
+	ret = cptra_test_invoke_dpe_command_initialize_context(simulation_context);
+	if (ret)
+		return ret;
+
+	ret = cptra_test_invoke_dpe_command_rotate_context(simulation_context, rotated_context);
+	if (ret)
+		return ret;
+
+	ret = cptra_test_invoke_dpe_command_destroy_context(rotated_context);
 
 	return ret;
 }
@@ -2370,6 +2456,7 @@ static int cptra_test_caliptra_fw_load(void)
 	}
 
 	cptra_ipc_receive(CPTRA_IPC_RX_TYPE_INTERNAL, &ret, sizeof(ret));
+	cptra_dump_fw_error_regs_if_nonzero();
 	if (ret) {
 		dbg_printf("cptra_ipc_receive:0x%x is failure, ret:0x%x\n", ipccmd,
 		       ret);
@@ -2725,7 +2812,8 @@ static int stress_cptra(int fd)
 		for (int j = 0; j < cptra_tests_count; j++) {
 			if (strcmp(cptra_tests[j].name, "dpe_tag_tci") == 0 ||
 			    strcmp(cptra_tests[j].name, "dpe_get_tagged_tci") == 0 ||
-			    strcmp(cptra_tests[j].name, "invoke_dpe_command") == 0)
+			    strcmp(cptra_tests[j].name, "invoke_dpe_command") == 0 ||
+			    strcmp(cptra_tests[j].name, "cert_chain_verify") == 0)
 				continue; // Skip tests that may alter state
 
 			// Skip get_cert_chain tests since not all chips are provisioned.
@@ -2769,6 +2857,7 @@ static int cmd_cptra(int fd, int num)
 			if (ret) {
 				printf("Test %s failed: %d\n", cptra_tests[i].name, ret);
 				results++;
+				break;
 			}
 		}
 		printf("Total tests run: %d, Failures: %d\n", cptra_tests_count, results);

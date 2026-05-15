@@ -3,6 +3,9 @@
 #ifndef _CPTRA_H_
 #define _CPTRA_H_
 
+/* Caliptra runtime error codes */
+#define CPTRA_RUNTIME_DUPLICATE_TAG		0x000E001F
+
 enum cptra_ipc_cmd {
 	CPTRA_IPCCMD_ECDSA384_SIGNATURE_VERIFY = 0,
 	CPTRA_IPCCMD_SHA384_DIGEST,
@@ -518,7 +521,7 @@ struct cptra_revoke_exported_cdi_handle_oa {
 	uint32_t fips_status;
 };
 
-void cptra_test_invoke_dpe_command_derive_context_exported_cdi(uint8_t *derived_context);
+int cptra_test_invoke_dpe_command_derive_context_exported_cdi(uint8_t *derived_context);
 int cptra_test_get_fmc_alias_csr(void);
 int cptra_test_sign_with_exported_ecdsa(uint8_t *exported_cdi);
 int cptra_test_revoke_exported_cdi_handle(uint8_t *exported_cdi);

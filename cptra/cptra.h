@@ -39,6 +39,10 @@ enum cptra_ipc_cmd {
 	CPTRA_IPCCMD_GET_FMC_ALIAS_CSR,
 	CPTRA_IPCCMD_SIGN_WITH_EXPORTED_ECDSA,
 	CPTRA_IPCCMD_REVOKE_EXPORTED_CDI_HANDLE,
+	CPTRA_IPCCMD_FIPS_SELF_TEST_START,
+	CPTRA_IPCCMD_FIPS_SELF_TEST_GET_RESULTS,
+	CPTRA_IPCCMD_GET_PCR_LOG,
+	CPTRA_IPCCMD_REALLOCATE_DPE_CONTEXT_LIMITS,
 };
 
 enum cptra_ipc_rx_type {
@@ -497,7 +501,44 @@ struct cptra_get_fmc_alias_csr_oa {
 	uint32_t chksum;
 	uint32_t fips_status;
 	uint32_t data_size;
-	uint8_t data[512]; /* Maximum size for the DER-encoded CSR */
+	uint8_t data[768]; /* Maximum size for the DER-encoded CSR */
+};
+
+struct cptra_fips_self_test_start_ia {
+};
+
+struct cptra_fips_self_test_start_oa {
+	uint32_t chksum;
+	uint32_t fips_status;
+};
+
+struct cptra_fips_self_test_get_results_ia {
+};
+
+struct cptra_fips_self_test_get_results_oa {
+	uint32_t chksum;
+	uint32_t fips_status;
+};
+
+struct cptra_get_pcr_log_ia {
+};
+
+struct cptra_get_pcr_log_oa {
+	uint32_t chksum;
+	uint32_t fips_status;
+	uint32_t data_size;
+	uint8_t data[952]; /* max 17 PCR log entries */
+};
+
+struct cptra_reallocate_dpe_context_limits_ia {
+	uint32_t pl0_context_limit;
+};
+
+struct cptra_reallocate_dpe_context_limits_oa {
+	uint32_t chksum;
+	uint32_t fips_status;
+	uint32_t new_pl0_context_limit;
+	uint32_t new_pl1_context_limit;
 };
 
 struct cptra_sign_with_exported_ecdsa_ia {

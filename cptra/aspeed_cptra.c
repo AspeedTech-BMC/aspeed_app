@@ -2734,6 +2734,343 @@ static int cptra_test_cert_chain_wrapper(void)
 	return ret;
 }
 
+int cptra_test_get_fmc_alias_csr(void)
+{
+	uint8_t *p8_bmcu_out = (uint8_t *)IPC_CHANNEL_1_BOOTMCU_OUT_ADDR;
+	uint8_t *p8_bmcu_in = (uint8_t *)IPC_CHANNEL_1_BOOTMCU_IN_ADDR;
+	struct cptra_get_fmc_alias_csr_ia input;
+	struct cptra_get_fmc_alias_csr_oa output;
+	enum cptra_ipc_cmd ipccmd = CPTRA_IPCCMD_GET_FMC_ALIAS_CSR;
+	uint32_t data[2];
+	int ret;
+
+	printf("%s: Start...\n", __func__);
+
+	data[0] = (uint32_t)(uintptr_t)p8_bmcu_in;
+	data[1] = (uint32_t)(uintptr_t)p8_bmcu_out;
+
+	memset(&input, 0, sizeof(input));
+	memset(&output, 0, sizeof(output));
+
+	safe_memcpy(shared_mem_in, (volatile uint8_t *)&input, sizeof(input));
+
+	ret = cptra_ipc_trigger(ipccmd, data, sizeof(data));
+	if (ret) {
+		printf("cptra_ipc_trigger:0x%x is failure, ret:0x%x\n", ipccmd, ret);
+		goto end;
+	} else {
+		dbg_printf("cptra_ipc_trigger:0x%x is successful\n", ipccmd);
+	}
+
+	ret = cptra_ipc_receive(CPTRA_IPC_RX_TYPE_EXTERNAL, &output, sizeof(output));
+	if (ret) {
+		printf("cptra_ipc_receive:0x%x is failure, ret:0x%x\n", ipccmd, ret);
+		goto end;
+	} else {
+		dbg_printf("cptra_ipc_receive:0x%x is successful\n", ipccmd);
+	}
+
+	dbg_printf("output: chksum=0x%x, fips_status=0x%x\n", output.chksum, output.fips_status);
+	printf("FMC Alias CSR size: %u bytes\n", output.data_size);
+	if (output.data_size && output.data_size <= sizeof(output.data))
+		hexdump(output.data, output.data_size, "FMC Alias CSR:");
+
+end:
+	printf("%s: %s\n", __func__, ret ? "Failed" : "Pass");
+	return ret;
+}
+
+static int cptra_test_fips_self_test_start(void)
+{
+	uint8_t *p8_bmcu_out = (uint8_t *)IPC_CHANNEL_1_BOOTMCU_OUT_ADDR;
+	uint8_t *p8_bmcu_in = (uint8_t *)IPC_CHANNEL_1_BOOTMCU_IN_ADDR;
+	struct cptra_fips_self_test_start_ia input;
+	struct cptra_fips_self_test_start_oa output;
+	enum cptra_ipc_cmd ipccmd = CPTRA_IPCCMD_FIPS_SELF_TEST_START;
+	uint32_t data[2];
+	int ret;
+
+	printf("%s: Start...\n", __func__);
+
+	data[0] = (uint32_t)(uintptr_t)p8_bmcu_in;
+	data[1] = (uint32_t)(uintptr_t)p8_bmcu_out;
+
+	memset(&input, 0, sizeof(input));
+	memset(&output, 0, sizeof(output));
+
+	safe_memcpy(shared_mem_in, (volatile uint8_t *)&input, sizeof(input));
+
+	ret = cptra_ipc_trigger(ipccmd, data, sizeof(data));
+	if (ret) {
+		printf("cptra_ipc_trigger:0x%x is failure, ret:0x%x\n", ipccmd, ret);
+		goto end;
+	} else {
+		dbg_printf("cptra_ipc_trigger:0x%x is successful\n", ipccmd);
+	}
+
+	ret = cptra_ipc_receive(CPTRA_IPC_RX_TYPE_EXTERNAL, &output, sizeof(output));
+	if (ret) {
+		printf("cptra_ipc_receive:0x%x is failure, ret:0x%x\n", ipccmd, ret);
+		goto end;
+	} else {
+		dbg_printf("cptra_ipc_receive:0x%x is successful\n", ipccmd);
+	}
+
+	dbg_printf("output: chksum=0x%x, fips_status=0x%x\n", output.chksum, output.fips_status);
+
+end:
+	printf("%s: %s\n", __func__, ret ? "Failed" : "Pass");
+	return ret;
+}
+
+static int cptra_test_fips_self_test_get_results(void)
+{
+	uint8_t *p8_bmcu_out = (uint8_t *)IPC_CHANNEL_1_BOOTMCU_OUT_ADDR;
+	uint8_t *p8_bmcu_in = (uint8_t *)IPC_CHANNEL_1_BOOTMCU_IN_ADDR;
+	struct cptra_fips_self_test_get_results_ia input;
+	struct cptra_fips_self_test_get_results_oa output;
+	enum cptra_ipc_cmd ipccmd = CPTRA_IPCCMD_FIPS_SELF_TEST_GET_RESULTS;
+	uint32_t data[2];
+	int ret;
+
+	printf("%s: Start...\n", __func__);
+
+	data[0] = (uint32_t)(uintptr_t)p8_bmcu_in;
+	data[1] = (uint32_t)(uintptr_t)p8_bmcu_out;
+
+	memset(&input, 0, sizeof(input));
+	memset(&output, 0, sizeof(output));
+
+	safe_memcpy(shared_mem_in, (volatile uint8_t *)&input, sizeof(input));
+
+	ret = cptra_ipc_trigger(ipccmd, data, sizeof(data));
+	if (ret) {
+		printf("cptra_ipc_trigger:0x%x is failure, ret:0x%x\n", ipccmd, ret);
+		goto end;
+	} else {
+		dbg_printf("cptra_ipc_trigger:0x%x is successful\n", ipccmd);
+	}
+
+	ret = cptra_ipc_receive(CPTRA_IPC_RX_TYPE_EXTERNAL, &output, sizeof(output));
+	if (ret) {
+		printf("cptra_ipc_receive:0x%x is failure, ret:0x%x\n", ipccmd, ret);
+		goto end;
+	} else {
+		dbg_printf("cptra_ipc_receive:0x%x is successful\n", ipccmd);
+	}
+
+	dbg_printf("output: chksum=0x%x, fips_status=0x%x\n", output.chksum, output.fips_status);
+
+end:
+	printf("%s: %s\n", __func__, ret ? "Failed" : "Pass");
+	return ret;
+}
+
+/* PcrLogEntry from caliptra-sw drivers/src/pcr_log.rs — 56 bytes each */
+struct pcr_log_entry {
+	uint16_t id;
+	uint8_t  reserved0[2];
+	uint32_t pcr_ids;     /* bitmask: bit N = PCR N is being extended */
+	uint32_t pcr_data[12]; /* 48 bytes of measured data */
+} __attribute__((packed));
+
+#define PCR_LOG_ENTRY_SIZE	56
+
+enum pcr_log_entry_id {
+	PCR_LOG_ID_INVALID			= 0,
+	PCR_LOG_ID_DEVICE_STATUS		= 1, /* 9 bytes of data */
+	PCR_LOG_ID_VENDOR_PUB_KEY_HASH		= 2, /* 48 bytes */
+	PCR_LOG_ID_OWNER_PUB_KEY_HASH		= 3, /* 48 bytes */
+	PCR_LOG_ID_FMC_TCI			= 4, /* 48 bytes */
+	PCR_LOG_ID_STASH_MEASUREMENT		= 5, /* 48 bytes */
+	PCR_LOG_ID_RT_TCI			= 6, /* 48 bytes */
+	PCR_LOG_ID_FW_IMAGE_MANIFEST		= 7, /* 48 bytes */
+};
+
+static const char *pcr_log_entry_id_name(uint16_t id)
+{
+	switch (id) {
+	case PCR_LOG_ID_DEVICE_STATUS:		return "DeviceStatus";
+	case PCR_LOG_ID_VENDOR_PUB_KEY_HASH:	return "VendorPubKeyHash";
+	case PCR_LOG_ID_OWNER_PUB_KEY_HASH:	return "OwnerPubKeyHash";
+	case PCR_LOG_ID_FMC_TCI:		return "FmcTci";
+	case PCR_LOG_ID_STASH_MEASUREMENT:	return "StashMeasurement";
+	case PCR_LOG_ID_RT_TCI:			return "RtTci";
+	case PCR_LOG_ID_FW_IMAGE_MANIFEST:	return "FwImageManifest";
+	default:				return "Invalid";
+	}
+}
+
+static size_t pcr_log_entry_data_size(uint16_t id)
+{
+	if (id == PCR_LOG_ID_DEVICE_STATUS)
+		return 9;
+	if (id >= PCR_LOG_ID_VENDOR_PUB_KEY_HASH && id <= PCR_LOG_ID_FW_IMAGE_MANIFEST)
+		return 48;
+	return 0;
+}
+
+static void pcr_log_print_pcr_ids(uint32_t pcr_ids)
+{
+	bool first = true;
+
+	/* Named PCRs per caliptra-sw drivers/src/pcr_log.rs */
+	static const struct { uint8_t bit; const char *name; } named[] = {
+		{  0, "FmcCurrent"  },
+		{  1, "FmcJourney"  },
+		{  2, "RtFwCurrent" },
+		{  3, "RtFwJourney" },
+		{ 31, "StashMeasurement" },
+	};
+
+	printf("  pcr_ids: 0x%08x [", pcr_ids);
+
+	for (size_t i = 0; i < ARRAY_SIZE(named); i++) {
+		if (pcr_ids & BIT(named[i].bit)) {
+			printf("%s%s", first ? "" : ", ", named[i].name);
+			first = false;
+		}
+	}
+	/* Print any unnamed set bits */
+	for (int b = 0; b < 32; b++) {
+		if (!(pcr_ids & BIT(b)))
+			continue;
+		bool is_named = false;
+
+		for (size_t i = 0; i < ARRAY_SIZE(named); i++) {
+			if (named[i].bit == b) {
+				is_named = true;
+				break;
+			}
+		}
+		if (!is_named) {
+			printf("%sPcr%d", first ? "" : ", ", b);
+			first = false;
+		}
+	}
+	printf("]\n");
+}
+
+static void pcr_log_parse(const uint8_t *data, uint32_t data_size)
+{
+	uint32_t offset = 0;
+	int idx = 0;
+
+	if (data_size % PCR_LOG_ENTRY_SIZE != 0)
+		printf("  Warning: data_size %u is not a multiple of %u\n",
+		       data_size, PCR_LOG_ENTRY_SIZE);
+
+	while (offset + PCR_LOG_ENTRY_SIZE <= data_size) {
+		const struct pcr_log_entry *e =
+			(const struct pcr_log_entry *)(data + offset);
+		size_t dsize = pcr_log_entry_data_size(e->id);
+
+		printf("[%d] id=%u (%s)\n", idx, e->id, pcr_log_entry_id_name(e->id));
+		pcr_log_print_pcr_ids(e->pcr_ids);
+		if (dsize > 0)
+			hexdump((const uint8_t *)e->pcr_data, dsize, "  data:");
+
+		offset += PCR_LOG_ENTRY_SIZE;
+		idx++;
+	}
+}
+
+static int cptra_test_get_pcr_log(void)
+{
+	uint8_t *p8_bmcu_out = (uint8_t *)IPC_CHANNEL_1_BOOTMCU_OUT_ADDR;
+	uint8_t *p8_bmcu_in = (uint8_t *)IPC_CHANNEL_1_BOOTMCU_IN_ADDR;
+	struct cptra_get_pcr_log_ia input;
+	struct cptra_get_pcr_log_oa output;
+	enum cptra_ipc_cmd ipccmd = CPTRA_IPCCMD_GET_PCR_LOG;
+	uint32_t data[2];
+	int ret;
+
+	printf("%s: Start...\n", __func__);
+
+	data[0] = (uint32_t)(uintptr_t)p8_bmcu_in;
+	data[1] = (uint32_t)(uintptr_t)p8_bmcu_out;
+
+	memset(&input, 0, sizeof(input));
+	memset(&output, 0, sizeof(output));
+
+	safe_memcpy(shared_mem_in, (volatile uint8_t *)&input, sizeof(input));
+
+	ret = cptra_ipc_trigger(ipccmd, data, sizeof(data));
+	if (ret) {
+		printf("cptra_ipc_trigger:0x%x is failure, ret:0x%x\n", ipccmd, ret);
+		goto end;
+	} else {
+		dbg_printf("cptra_ipc_trigger:0x%x is successful\n", ipccmd);
+	}
+
+	ret = cptra_ipc_receive(CPTRA_IPC_RX_TYPE_EXTERNAL, &output, sizeof(output));
+	if (ret) {
+		printf("cptra_ipc_receive:0x%x is failure, ret:0x%x\n", ipccmd, ret);
+		goto end;
+	} else {
+		dbg_printf("cptra_ipc_receive:0x%x is successful\n", ipccmd);
+	}
+
+	dbg_printf("output: chksum=0x%x, fips_status=0x%x\n", output.chksum, output.fips_status);
+
+	printf("PCR log: %u bytes (%u entries)\n",
+	       output.data_size, output.data_size / PCR_LOG_ENTRY_SIZE);
+
+	if (output.data_size && output.data_size <= sizeof(output.data))
+		pcr_log_parse(output.data, output.data_size);
+
+end:
+	printf("%s: %s\n", __func__, ret ? "Failed" : "Pass");
+	return ret;
+}
+
+static int cptra_test_reallocate_dpe_context_limits(void)
+{
+	uint8_t *p8_bmcu_out = (uint8_t *)IPC_CHANNEL_1_BOOTMCU_OUT_ADDR;
+	uint8_t *p8_bmcu_in = (uint8_t *)IPC_CHANNEL_1_BOOTMCU_IN_ADDR;
+	struct cptra_reallocate_dpe_context_limits_ia input;
+	struct cptra_reallocate_dpe_context_limits_oa output;
+	enum cptra_ipc_cmd ipccmd = CPTRA_IPCCMD_REALLOCATE_DPE_CONTEXT_LIMITS;
+	uint32_t data[2];
+	int ret;
+
+	printf("%s: Start...\n", __func__);
+
+	data[0] = (uint32_t)(uintptr_t)p8_bmcu_in;
+	data[1] = (uint32_t)(uintptr_t)p8_bmcu_out;
+
+	memset(&input, 0, sizeof(input));
+	memset(&output, 0, sizeof(output));
+
+	input.pl0_context_limit = 32;
+
+	safe_memcpy(shared_mem_in, (volatile uint8_t *)&input, sizeof(input));
+
+	ret = cptra_ipc_trigger(ipccmd, data, sizeof(data));
+	if (ret) {
+		printf("cptra_ipc_trigger:0x%x is failure, ret:0x%x\n", ipccmd, ret);
+		goto end;
+	} else {
+		dbg_printf("cptra_ipc_trigger:0x%x is successful\n", ipccmd);
+	}
+
+	ret = cptra_ipc_receive(CPTRA_IPC_RX_TYPE_EXTERNAL, &output, sizeof(output));
+	if (ret) {
+		printf("cptra_ipc_receive:0x%x is failure, ret:0x%x\n", ipccmd, ret);
+		goto end;
+	} else {
+		dbg_printf("cptra_ipc_receive:0x%x is successful\n", ipccmd);
+	}
+
+	dbg_printf("output: chksum=0x%x, fips_status=0x%x\n", output.chksum, output.fips_status);
+	printf("New PL0 context limit: %u, PL1 context limit: %u\n",
+	       output.new_pl0_context_limit, output.new_pl1_context_limit);
+
+end:
+	printf("%s: %s\n", __func__, ret ? "Failed" : "Pass");
+	return ret;
+}
+
 typedef int (*cptra_test_func_t)(void);
 
 struct cptra_test_entry {
@@ -2774,7 +3111,13 @@ static struct cptra_test_entry cptra_tests[] = {
 	{ "capabilities",			cptra_test_capabilities },
 	{ "version",				cptra_test_version },
 	{ "cert_chain_verify",			cptra_test_cert_chain_wrapper },
-	// Add more test functions here as needed
+
+	/* New commands in caliptra-sw-rt-1.2.5 */
+	{ "get_fmc_alias_csr",			cptra_test_get_fmc_alias_csr },
+	{ "fips_self_test_start",		cptra_test_fips_self_test_start },
+	{ "fips_self_test_get_results",		cptra_test_fips_self_test_get_results },
+	{ "get_pcr_log",			cptra_test_get_pcr_log },
+	{ "reallocate_dpe_context_limits",	cptra_test_reallocate_dpe_context_limits },
 };
 
 static int cptra_tests_count = ARRAY_SIZE(cptra_tests);
@@ -2813,7 +3156,9 @@ static int stress_cptra(int fd)
 			if (strcmp(cptra_tests[j].name, "dpe_tag_tci") == 0 ||
 			    strcmp(cptra_tests[j].name, "dpe_get_tagged_tci") == 0 ||
 			    strcmp(cptra_tests[j].name, "invoke_dpe_command") == 0 ||
-			    strcmp(cptra_tests[j].name, "cert_chain_verify") == 0)
+			    strcmp(cptra_tests[j].name, "cert_chain_verify") == 0 ||
+			    strcmp(cptra_tests[j].name, "fips_self_test_start") == 0 ||
+			    strcmp(cptra_tests[j].name, "reallocate_dpe_context_limits") == 0)
 				continue; // Skip tests that may alter state
 
 			// Skip get_cert_chain tests since not all chips are provisioned.

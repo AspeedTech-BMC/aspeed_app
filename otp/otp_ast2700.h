@@ -145,7 +145,7 @@ enum otp_status {
 /* OTP key header format */
 #define OTP_KH_NUM			80
 #define OTP_KH_KEY_ID(kh)		((kh) & 0xf)
-#define OTP_KH_KEY_TYPE(kh)		(((kh) >> 4) & 0x7)
+#define OTP_KH_KEY_TYPE(kh)		(((kh) >> 4) & 0x3f)	/* bits 4~9: SOC types 1~6, OEM types 0x08~0x38 */
 #define OTP_KH_LAST(kh)			(((kh) >> 15) & 0x1)
 #define OTP_KH_OFFSET(kh)		(((kh) >> 16) & 0xfff)
 

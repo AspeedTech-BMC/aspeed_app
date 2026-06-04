@@ -673,6 +673,8 @@ static int _otp_print_key(uint32_t header, uint32_t offset, uint8_t *data)
 
 	} else if (key_info.key_type == SOC_VAULT || key_info.key_type == SOC_VAULT_SEED) {
 		buf_print(&data[key_offset], 0x20);
+	} else if (key_info.key_type == OEM_DATA) {
+		buf_print(&data[key_offset], 0x30);
 	}
 
 	return 0;

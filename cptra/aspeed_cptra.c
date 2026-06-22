@@ -26,12 +26,8 @@
 #include <mbedtls/oid.h>
 #include "ca_cert.h"
 
-// #define DEBUG
-#ifdef DEBUG
-#define dbg_printf(fmt, args...)		printf(fmt, ##args)
-#else
-#define dbg_printf(fmt, args...)
-#endif
+static int verbose;
+#define dbg_printf(fmt, args...)	do { if (verbose) printf(fmt, ##args); } while (0)
 
 #define BIT(n)		(1U << (n))
 
@@ -238,9 +234,7 @@ int cptra_ipc_receive(enum cptra_ipc_rx_type type, void *output, int output_size
 
 static void dbg_hexdump(const void *data, size_t size, const char *title)
 {
-#ifdef DEBUG
 	const unsigned char *p = (const unsigned char *)data;
-#endif
 	if (title)
 		dbg_printf("%s\n", title);
 
@@ -3225,9 +3219,10 @@ static int cmd_cptra(int fd, int num)
 static void usage(void)
 {
 	printf("Usage:\n");
-	printf("1. aspeed-cptra list\n");
+	printf("1. aspeed-cptra [-v] list\n");
 	printf("\tlist all available mailbox devices\n\n");
-	printf("2. aspeed-cptra <dev_name> <subcommand> [args...]\n");
+	printf("2. aspeed-cptra [-v] <dev_name> <subcommand> [args...]\n");
+	printf("\t-v				# verbose: dump debug info\n");
 	printf("\tall				# run all subcommands\n");
 	printf("\tlist				# list all subcommands\n");
 	printf("\t<num>				# run cptra subcommands #num\n");
@@ -3262,22 +3257,35 @@ static void get_chip_version(void)
 
 int main(int argc, char *argv[])
 {
-	const char *device = argv[1];
+	const char *device;
 	const char *cmd = NULL;
 	char filename[262];
-	int fd, ret;
+	int fd, ret, opt;
 
-	if (argc != 2 && argc != 3) {
+	while ((opt = getopt(argc, argv, "v")) != -1) {
+		if (opt == 'v') {
+			verbose = 1;
+		} else {
+			usage();
+			return 1;
+		}
+	}
+	argc -= optind;
+	argv += optind;
+
+	if (argc != 1 && argc != 2) {
 		usage();
 		return 1;
 	}
 
-	if (argc == 2 && strcmp(device, "list") != 0) {
+	device = argv[0];
+
+	if (argc == 1 && strcmp(device, "list") != 0) {
 		usage();
 		return 1;
 	}
 
-	cmd = argv[2];
+	cmd = argv[1];
 
 	get_chip_version();
 

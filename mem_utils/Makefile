@@ -5,7 +5,7 @@ endif
 endif
 
 CC      	= $(CROSS_COMPILE)gcc
-MYCFLAGS	= -Wall -ansi
+MYCFLAGS	= -Wall
 INCLUDE		= .
 OBJS		= mem_common.h
 LDLIBS		= -lc -lrt -lgcc

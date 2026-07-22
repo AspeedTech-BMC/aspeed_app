@@ -1,4 +1,8 @@
-#include <stdio.h>   
+// SPDX-License-Identifier: GPL-2.0
+/*
+ * Copyright 2021 Aspeed Technology Inc.
+ */
+#include <stdio.h>
 #include <linux/types.h>   
 #include <fcntl.h>   
 #include <unistd.h>   

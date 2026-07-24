@@ -1628,12 +1628,23 @@ static int do_otpecc(int argc, char *const argv[])
 			return CMD_RET_SUCCESS;
 		}
 
-		/* Set ECC enable */
-		ret = ioctl(info_cb.otp_fd, ASPEED_OTP_SET_ECC, NULL);
+		ret = ioctl(info_cb.otp_fd, ASPEED_OTP_SET_ECC, OTP_ECC_ENABLE);
 		if (ret)
 			return CMD_RET_FAILURE;
 
 		printf("OTP ECC is enabled\n");
+
+	} else if (!strcmp(argv[0], "disable")) {
+		if (ecc_en == OTP_ECC_DISABLE) {
+			printf("OTP ECC is already disabled\n");
+			return CMD_RET_SUCCESS;
+		}
+
+		ret = ioctl(info_cb.otp_fd, ASPEED_OTP_SET_ECC, OTP_ECC_DISABLE);
+		if (ret)
+			return CMD_RET_FAILURE;
+
+		printf("OTP ECC is disabled\n");
 
 	} else {
 		return CMD_RET_USAGE;
@@ -1679,7 +1690,7 @@ static void usage(void)
 	       "\totp <dev> info key|rbp|conf|strap|strap-ext\n"
 	       "\totp <dev> patch prog <dram_addr> <otp_w_offset> <w_count>\n"
 	       "\totp <dev> patch enable pre|post <otp_start_w_offset> <w_count>\n"
-	       "\totp <dev> ecc status|enable\n"
+	       "\totp <dev> ecc status|enable|disable\n"
 	       "\totp <dev> dump <file>\n");
 }
 

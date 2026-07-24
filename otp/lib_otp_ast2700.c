@@ -154,6 +154,18 @@ int otp_read_swpuf(uint32_t offset, uint16_t *data)
 	return otp_read(offset + SW_PUF_REGION_START_ADDR, data);
 }
 
+int otp_ecc_ctrl(bool enable)
+{
+	int ret;
+
+	ret = ioctl(info_cb.otp_fd, ASPEED_OTP_SET_ECC,
+		    enable ? OTP_ECC_ENABLE : OTP_ECC_DISABLE);
+	if (ret)
+		printf("OTP ECC %s failed\n", enable ? "enable" : "disable");
+
+	return ret;
+}
+
 int otp_prog(uint32_t offset, uint16_t data)
 {
 	struct otp_prog pdata;

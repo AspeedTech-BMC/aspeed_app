@@ -266,6 +266,7 @@ int otp_read_sdata_multi(uint32_t offset, uint16_t *data, int num);
 int otp_read_cptra(uint32_t offset, uint16_t *data);
 int otp_read_swpuf(uint32_t offset, uint16_t *data);
 
+int otp_ecc_ctrl(bool enable);
 int otp_prog(uint32_t offset, uint16_t data);
 int otp_prog_multi(uint32_t offset, uint16_t *data, int num);
 int otp_prog_data(int mode, int otp_w_offset, int bit_offset,

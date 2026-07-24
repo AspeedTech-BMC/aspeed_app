@@ -156,6 +156,7 @@ end:
 int lib_otp_prog_data(int mode, int offset, int w_count, uint16_t *input)
 {
 	uint32_t prog_address;
+	bool ecc_enabled = false;
 	int range;
 	int rc;
 
@@ -177,6 +178,11 @@ int lib_otp_prog_data(int mode, int offset, int w_count, uint16_t *input)
 	case OTP_REGION_CALIPTRA:
 		prog_address = CAL_REGION_START_ADDR + offset;
 		range = OTP_CAL_REGION_SIZE;
+		rc = otp_ecc_ctrl(true);
+		if (rc)
+			goto end;
+
+		ecc_enabled = true;
 		break;
 	default:
 		printf("mode %d is not supported\n", mode);
@@ -200,8 +206,14 @@ int lib_otp_prog_data(int mode, int offset, int w_count, uint16_t *input)
 		input++;
 	}
 
+	if (ecc_enabled)
+		otp_ecc_ctrl(false);
+
 	return 0;
 end:
+	if (ecc_enabled)
+		otp_ecc_ctrl(false);
+
 	return rc;
 }
 
@@ -366,7 +378,14 @@ int lib_otp_prog_image(char *path)
 	}
 	if (otp_header->image_info & OTP_INC_CALIPTRA) {
 		printf("programing caliptra region ...\n");
+		ret = otp_ecc_ctrl(true);
+		if (ret) {
+			printf("Error enabling ECC\n");
+			goto end;
+		}
+
 		ret = otp_prog_image_region(&image_layout, OTP_REGION_CALIPTRA);
+		otp_ecc_ctrl(false);
 		if (ret != 0) {
 			printf("Error\n");
 			goto end;

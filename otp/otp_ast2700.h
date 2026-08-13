@@ -25,6 +25,12 @@ enum otp_status {
 	OTP_USAGE = -1,
 	OTP_SUCCESS = 0,
 	OTP_PROG_SKIP,
+
+	OTP_CMD_ERR_BASE = 200,
+	OTP_CMD_ERR_FAIL,           /* prog fail or soak limit exceeded */
+	OTP_CMD_ERR_CMP_FAIL,       /* compare mismatch */
+	OTP_CMD_ERR_REGION_FAIL,    /* region write/read protected */
+	OTP_CMD_ERR_MASTER_FAIL,    /* master protection error */
 };
 
 #define OTP_VER				"2.1.0"

@@ -275,9 +275,16 @@ static int otp_print_rbp_info(void)
 	uint16_t OTPRBP[OTP_RBP_REGION_SIZE];
 	uint32_t w_offset;
 	uint32_t length;
+	int ret;
 
-	for (int i = 0; i < OTP_RBP_REGION_SIZE; i++)
-		otp_read_rbp(i, &OTPRBP[i]);
+	for (int i = 0; i < OTP_RBP_REGION_SIZE; i++) {
+		ret = otp_read_rbp(i, &OTPRBP[i]);
+		if (ret) {
+			printf("Failed to read OTPRBP at offset 0x%x, ret = %d, errno = %d\n",
+				   i, ret, errno);
+			return CMD_RET_FAILURE;
+		}
+	}
 
 	printf("W   bit-length            Description                       Value\n");
 	printf("__________________________________________________________________________\n");
@@ -305,9 +312,16 @@ static int otp_print_conf_info(void)
 	uint32_t w_offset;
 	uint32_t bit_offset;
 	uint32_t otp_value;
+	int ret;
 
-	for (int i = 0; i < 32; i++)
-		otp_read_conf(i, &OTPCFG[i]);
+	for (int i = 0; i < 32; i++) {
+		ret = otp_read_conf(i, &OTPCFG[i]);
+		if (ret) {
+			printf("Failed to read OTPCFG at offset 0x%x, ret = %d, errno = %d\n",
+				   i, ret, errno);
+			return CMD_RET_FAILURE;
+		}
+	}
 
 	printf("W    BIT        Value       Description\n");
 	printf("__________________________________________________________________________\n");
@@ -705,8 +719,14 @@ static void otp_print_key(uint32_t *data)
 static void otp_print_key_info(void)
 {
 	uint16_t buf[OTP_SEC_REGION_SIZE];
+	int ret;
 
-	otp_read_sdata_multi(0, buf, OTP_SEC_REGION_SIZE);
+	ret = otp_read_sdata_multi(0, buf, OTP_SEC_REGION_SIZE);
+	if (ret) {
+		printf("Failed to read OTP secure region, ret = %d, errno = %d\n", ret, errno);
+		return;
+	}
+
 	otp_print_key((uint32_t *)buf);
 }
 
@@ -1339,13 +1359,26 @@ static int do_otpdump(int argc, char *const argv[])
 	uint16_t data;
 	int ret;
 	FILE *fd;
+	const char *filename = NULL;
+	bool skip_locked_regions = false;
+	int i;
 
-	if (argc != 2)
+	if (argc != 2 && argc != 3)
 		return CMD_RET_USAGE;
 
-	fd = fopen(argv[1], "wb");
+	for (i = 1; i < argc; i++) {
+		if (!strcmp(argv[i], "--skip_locked_regions"))
+			skip_locked_regions = true;
+		else
+			filename = argv[i];
+	}
+
+	if (!filename)
+		return CMD_RET_USAGE;
+
+	fd = fopen(filename, "wb");
 	if (!fd) {
-		printf("failed to open %s\n", argv[1]);
+		printf("failed to open %s\n", filename);
 		return CMD_RET_FAILURE;
 	}
 
@@ -1361,21 +1394,26 @@ static int do_otpdump(int argc, char *const argv[])
 
 		ret = ioctl(info_cb.otp_fd, ASPEED_OTP_READ_DATA, &rdata);
 		if (ret) {
-			printf("Failed to read OTP at offset 0x%x\n", offset);
-			fclose(fd);
-			return CMD_RET_FAILURE;
+			if (skip_locked_regions && errno == OTP_CMD_ERR_REGION_FAIL) {
+				data = 0xffff;
+			} else {
+				printf("Failed to read OTP at offset 0x%x, ret = %d, errno = %d\n",
+				       offset, ret, errno);
+				fclose(fd);
+				return CMD_RET_FAILURE;
+			}
 		}
 
 		/* Write the 16-bit word to the file */
 		if (fwrite(&data, 2, 1, fd) != 1) {
-			printf("Failed to write to %s\n", argv[1]);
+			printf("Failed to write to %s\n", filename);
 			fclose(fd);
 			return CMD_RET_FAILURE;
 		}
 	}
 
 	fclose(fd);
-	printf("Successfully dumped OTP to %s\n", argv[1]);
+	printf("Successfully dumped OTP to %s\n", filename);
 
 	return CMD_RET_SUCCESS;
 }
@@ -1675,7 +1713,7 @@ static struct cmd_tbl cmd_otp[] = {
 	{ "patch",   6, do_otppatch },
 	{ "ecc",     3, do_otpecc   },
 	{ "info",    3, do_otpinfo  },
-	{ "dump",    3, do_otpdump  }
+	{ "dump",    4, do_otpdump  }
 };
 
 static void usage(void)
@@ -1691,7 +1729,7 @@ static void usage(void)
 	       "\totp <dev> patch prog <dram_addr> <otp_w_offset> <w_count>\n"
 	       "\totp <dev> patch enable pre|post <otp_start_w_offset> <w_count>\n"
 	       "\totp <dev> ecc status|enable|disable\n"
-	       "\totp <dev> dump <file>\n");
+	       "\totp <dev> dump <file> [--skip_locked_regions]\n");
 }
 
 struct cmd_tbl *find_cmd_tbl(const char *cmd, struct cmd_tbl *table,

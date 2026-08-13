@@ -2560,7 +2560,7 @@ static int ast_cert_verify_callback(void *data, mbedtls_x509_crt *crt, int depth
 
 static int cptra_test_idevid_cert(void)
 {
-	mbedtls_x509_crt root_ca_cert, sub_ca_cert, cert_chain;
+	mbedtls_x509_crt root_ca_cert, sub_ca_ecdsa0, sub_ca_ecdsa1, cert_chain;
 	uint32_t flags;
 	int ret;
 	struct ast_cert_ctx ctx = {0};
@@ -2580,9 +2580,12 @@ static int cptra_test_idevid_cert(void)
 	dbg_printf("Dumping ASPEED Root CA certificate...\n");
 	dump_certificate_der(aspeed_root_ca_cert_der, ARRAY_SIZE(aspeed_root_ca_cert_der));
 
-	/* Verify Sub CA by using Root CA cert */
-	printf("Verifying Sub CA certificate...\n");
+	/* Parse and verify both Sub CA certs against Root CA */
+	printf("Verifying Sub CA certificates...\n");
 	mbedtls_x509_crt_init(&root_ca_cert);
+	mbedtls_x509_crt_init(&sub_ca_ecdsa0);
+	mbedtls_x509_crt_init(&sub_ca_ecdsa1);
+
 	ret = mbedtls_x509_crt_parse_der(&root_ca_cert, aspeed_root_ca_cert_der,
 					 ARRAY_SIZE(aspeed_root_ca_cert_der));
 	if (ret) {
@@ -2595,32 +2598,53 @@ static int cptra_test_idevid_cert(void)
 		goto cleanup_root;
 	}
 
-	mbedtls_x509_crt_init(&sub_ca_cert);
-	ret = mbedtls_x509_crt_parse_der(&sub_ca_cert, sub_ca_cert_der,
-					 ARRAY_SIZE(sub_ca_cert_der));
+	ret = mbedtls_x509_crt_parse_der(&sub_ca_ecdsa0, sub_ca_ecdsa0_cert_der,
+					 ARRAY_SIZE(sub_ca_ecdsa0_cert_der));
 	if (ret) {
-		printf("Sub CA parse failed, ret:0x%x\n", ret);
+		printf("Sub CA ECDSA0 parse failed, ret:0x%x\n", ret);
 
 		char err[128] = {0};
 
 		mbedtls_strerror(ret, err, sizeof(err));
-		printf("Sub CA parse error: %s\n", err);
+		printf("Sub CA ECDSA0 parse error: %s\n", err);
 		goto cleanup_sub;
 	}
 
-	ret = mbedtls_x509_crt_verify(&sub_ca_cert, &root_ca_cert, NULL, NULL, &flags, NULL, NULL);
+	ret = mbedtls_x509_crt_verify(&sub_ca_ecdsa0, &root_ca_cert, NULL, NULL, &flags, NULL, NULL);
 	if (ret) {
-		printf("Sub CA verification failed, ret:0x%x flags=%x\n",
-			  ret, flags);
+		printf("Sub CA ECDSA0 verification failed, ret:0x%x flags=%x\n", ret, flags);
 
 		char err[128] = {0};
 
 		mbedtls_strerror(ret, err, sizeof(err));
-		printf("Sub CA verification error: %s\n", err);
+		printf("Sub CA ECDSA0 verification error: %s\n", err);
 		goto cleanup_sub;
-	} else {
-		printf("Sub CA verified by ASPEED Root CA successfully !!!\n");
 	}
+	printf("Sub CA ECDSA0 verified by ASPEED Root CA successfully !!!\n");
+
+	ret = mbedtls_x509_crt_parse_der(&sub_ca_ecdsa1, sub_ca_ecdsa1_cert_der,
+					 ARRAY_SIZE(sub_ca_ecdsa1_cert_der));
+	if (ret) {
+		printf("Sub CA ECDSA1 parse failed, ret:0x%x\n", ret);
+
+		char err[128] = {0};
+
+		mbedtls_strerror(ret, err, sizeof(err));
+		printf("Sub CA ECDSA1 parse error: %s\n", err);
+		goto cleanup_sub;
+	}
+
+	ret = mbedtls_x509_crt_verify(&sub_ca_ecdsa1, &root_ca_cert, NULL, NULL, &flags, NULL, NULL);
+	if (ret) {
+		printf("Sub CA ECDSA1 verification failed, ret:0x%x flags=%x\n", ret, flags);
+
+		char err[128] = {0};
+
+		mbedtls_strerror(ret, err, sizeof(err));
+		printf("Sub CA ECDSA1 verification error: %s\n", err);
+		goto cleanup_sub;
+	}
+	printf("Sub CA ECDSA1 verified by ASPEED Root CA successfully !!!\n");
 
 	/* Reverse Cert Chain */
 	dbg_printf("Reversing Cert Chain...\n");
@@ -2670,10 +2694,17 @@ static int cptra_test_idevid_cert(void)
 		}
 	}
 
-	/* Verify Certificate Chain by using CA cert */
+	/*
+	 * Pass both Sub CAs as a trusted pool; mbedtls_x509_crt_verify walks
+	 * the linked list and selects the one that signed the IDevID cert.
+	 */
+	sub_ca_ecdsa0.next = &sub_ca_ecdsa1;
+
 	printf("Verifying certificate chain...\n");
-	ret = mbedtls_x509_crt_verify(&cert_chain, &sub_ca_cert, NULL, NULL, &flags,
+	ret = mbedtls_x509_crt_verify(&cert_chain, &sub_ca_ecdsa0, NULL, NULL, &flags,
 				      ast_cert_verify_callback, &ctx);
+	sub_ca_ecdsa0.next = NULL;
+
 	if (ret) {
 		printf("Certificate chain verification failed, ret:0x%x flags=%x\n",
 			  ret, flags);
@@ -2682,20 +2713,39 @@ static int cptra_test_idevid_cert(void)
 
 		mbedtls_strerror(ret, err, sizeof(err));
 		printf("Certificate chain verification error: %s\n", err);
+		goto cleanup_cert;
 	}
 
-	if (ctx.cert_num_checked == 0x5) {
-		printf("Certificate chain verified by Sub CA successfully !!!\n");
-	} else {
+	if (ctx.cert_num_checked != 0x5) {
 		printf("Certificate chain verification failed, checked %d/5 certs\n",
 			  ctx.cert_num_checked);
 		ret = -1;
+		goto cleanup_cert;
+	}
+
+	/*
+	 * Identify which Sub CA signed the IDevID by comparing issuer_raw of
+	 * the IDevID (tail of cert_chain) against each Sub CA's subject_raw.
+	 */
+	{
+		mbedtls_x509_crt *idevid = &cert_chain;
+
+		while (idevid->next)
+			idevid = idevid->next;
+
+		if (idevid->issuer_raw.len == sub_ca_ecdsa0.subject_raw.len &&
+		    memcmp(idevid->issuer_raw.p, sub_ca_ecdsa0.subject_raw.p,
+			   idevid->issuer_raw.len) == 0)
+			printf("Certificate chain verified by Sub CA ECDSA0 successfully !!!\n");
+		else
+			printf("Certificate chain verified by Sub CA ECDSA1 successfully !!!\n");
 	}
 
 cleanup_cert:
 	mbedtls_x509_crt_free(&cert_chain);
 cleanup_sub:
-	mbedtls_x509_crt_free(&sub_ca_cert);
+	mbedtls_x509_crt_free(&sub_ca_ecdsa1);
+	mbedtls_x509_crt_free(&sub_ca_ecdsa0);
 cleanup_root:
 	mbedtls_x509_crt_free(&root_ca_cert);
 

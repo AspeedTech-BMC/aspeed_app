@@ -18,6 +18,27 @@
 #include "otp_ast2700.h"
 #include "otp_info_ast2700.h"
 
+/*
+ * ASPEED_OTP_READ_DATA/ASPEED_OTP_PROG_DATA report the OTP_CMD_ERR_* codes
+ * (200~204) as errno on failure. strerror() doesn't know these, so translate
+ * them here before falling back to strerror() for regular errno values.
+ */
+static const char *otp_cmd_errno_str(int err)
+{
+	switch (err) {
+	case OTP_CMD_ERR_FAIL:
+		return "prog fail or soak limit exceeded";
+	case OTP_CMD_ERR_CMP_FAIL:
+		return "compare mismatch";
+	case OTP_CMD_ERR_REGION_FAIL:
+		return "region write/read protected";
+	case OTP_CMD_ERR_MASTER_FAIL:
+		return "master protection error";
+	default:
+		return strerror(err);
+	}
+}
+
 static int otp_print_rom(uint32_t offset, int w_count)
 {
 	int range = OTP_ROM_REGION_SIZE;
@@ -280,8 +301,8 @@ static int otp_print_rbp_info(void)
 	for (int i = 0; i < OTP_RBP_REGION_SIZE; i++) {
 		ret = otp_read_rbp(i, &OTPRBP[i]);
 		if (ret) {
-			printf("Failed to read OTPRBP at offset 0x%x, ret = %d, errno = %d\n",
-				   i, ret, errno);
+			printf("Failed to read OTPRBP at offset 0x%x, ret = %d, errno = %d (%s)\n",
+				   i, ret, errno, otp_cmd_errno_str(errno));
 			return CMD_RET_FAILURE;
 		}
 	}
@@ -317,8 +338,8 @@ static int otp_print_conf_info(void)
 	for (int i = 0; i < 32; i++) {
 		ret = otp_read_conf(i, &OTPCFG[i]);
 		if (ret) {
-			printf("Failed to read OTPCFG at offset 0x%x, ret = %d, errno = %d\n",
-				   i, ret, errno);
+			printf("Failed to read OTPCFG at offset 0x%x, ret = %d, errno = %d (%s)\n",
+				   i, ret, errno, otp_cmd_errno_str(errno));
 			return CMD_RET_FAILURE;
 		}
 	}
@@ -723,7 +744,8 @@ static void otp_print_key_info(void)
 
 	ret = otp_read_sdata_multi(0, buf, OTP_SEC_REGION_SIZE);
 	if (ret) {
-		printf("Failed to read OTP secure region, ret = %d, errno = %d\n", ret, errno);
+		printf("Failed to read OTP secure region, ret = %d, errno = %d (%s)\n",
+		       ret, errno, otp_cmd_errno_str(errno));
 		return;
 	}
 
@@ -1397,8 +1419,8 @@ static int do_otpdump(int argc, char *const argv[])
 			if (skip_locked_regions && errno == OTP_CMD_ERR_REGION_FAIL) {
 				data = 0xffff;
 			} else {
-				printf("Failed to read OTP at offset 0x%x, ret = %d, errno = %d\n",
-				       offset, ret, errno);
+				printf("Failed to read OTP at offset 0x%x, ret = %d, errno = %d (%s)\n",
+				       offset, ret, errno, otp_cmd_errno_str(errno));
 				fclose(fd);
 				return CMD_RET_FAILURE;
 			}
@@ -1638,10 +1660,140 @@ end:
 		return CMD_RET_USAGE;
 }
 
+static const struct {
+	const char *name;
+	uint32_t id;
+} otp_ecc_policy_region_tbl[] = {
+	{ "rom",       OTP_REGION_ID_ROM      },
+	{ "rbp",       OTP_REGION_ID_RBP      },
+	{ "conf",      OTP_REGION_ID_CFG      },
+	{ "strap",     OTP_REGION_ID_STRAP    },
+	{ "strap-ext", OTP_REGION_ID_STRAPEXT },
+	{ "u-data",    OTP_REGION_ID_USR      },
+	{ "s-data",    OTP_REGION_ID_SEC      },
+	{ "cptra",     OTP_REGION_ID_CAL      },
+	{ "puf",       OTP_REGION_ID_PUF      },
+};
+
+static int otp_ecc_policy_region_id(const char *name, uint32_t *id)
+{
+	for (int i = 0; i < ARRAY_SIZE(otp_ecc_policy_region_tbl); i++) {
+		if (!strcmp(name, otp_ecc_policy_region_tbl[i].name)) {
+			*id = otp_ecc_policy_region_tbl[i].id;
+			return 0;
+		}
+	}
+
+	return -1;
+}
+
+static int otp_ecc_policy_dump_all(int global_ecc_en)
+{
+	uint32_t ecc_en, ecc_supported;
+	int ret;
+	int fail = 0;
+
+	if (global_ecc_en == OTP_ECC_ENABLE)
+		printf("note: global ECC switch is enabled, forcing ECC on for every capable region below\n");
+
+	printf("%-14s  %-14s  %s\n", "region", "ecc_supported", "ecc_enabled");
+	printf("----------------------------------------\n");
+
+	for (int i = 0; i < ARRAY_SIZE(otp_ecc_policy_region_tbl); i++) {
+		int effective_en;
+
+		ret = otp_get_ecc_policy(otp_ecc_policy_region_tbl[i].id, &ecc_en, &ecc_supported);
+		if (ret) {
+			printf("%-14s  failed to get ECC policy, ret = %d, errno = %d (%s)\n",
+			       otp_ecc_policy_region_tbl[i].name, ret, errno,
+			       otp_cmd_errno_str(errno));
+			fail = 1;
+			continue;
+		}
+
+		/* global switch forces ECC on for capable regions, no effect otherwise */
+		effective_en = ecc_supported && (global_ecc_en == OTP_ECC_ENABLE || ecc_en);
+
+		printf("%-14s  %-14s  %s%s\n",
+		       otp_ecc_policy_region_tbl[i].name,
+		       ecc_supported ? "yes" : "no",
+		       effective_en ? "on" : "off",
+		       (global_ecc_en == OTP_ECC_ENABLE && ecc_supported) ? " (forced)" : "");
+	}
+
+	return fail ? CMD_RET_FAILURE : CMD_RET_SUCCESS;
+}
+
+/*
+ * global_ecc_en reflects the ASPEED_OTP_GET_ECC force switch: when it's
+ * enabled, the driver forces ECC on for every region with ecc_supported,
+ * overriding that region's own ecc_en, while ecc_supported=false regions
+ * (rbp/strap) always stay off regardless of the global switch.
+ */
+static int do_otpecc_policy(int argc, char *const argv[], int global_ecc_en)
+{
+	uint32_t region_id;
+	uint32_t ecc_en;
+	int ret;
+
+	if (argc < 1)
+		return CMD_RET_USAGE;
+
+	if (!strcmp(argv[0], "dump")) {
+		if (argc != 1)
+			return CMD_RET_USAGE;
+
+		return otp_ecc_policy_dump_all(global_ecc_en);
+
+	} else if (!strcmp(argv[0], "set")) {
+		if (argc != 3)
+			return CMD_RET_USAGE;
+
+		if (otp_ecc_policy_region_id(argv[1], &region_id)) {
+			printf("Unknown OTP region '%s'\n", argv[1]);
+			return CMD_RET_USAGE;
+		}
+
+		if (region_id == OTP_REGION_ID_RBP || region_id == OTP_REGION_ID_STRAP) {
+			printf("region '%s' does not support ECC, nothing to set\n", argv[1]);
+			return CMD_RET_USAGE;
+		}
+
+		if (!strcmp(argv[2], "enable")) {
+			ecc_en = OTP_ECC_ENABLE;
+		} else if (!strcmp(argv[2], "disable")) {
+			ecc_en = OTP_ECC_DISABLE;
+		} else {
+			printf("ECC enable value must be 'enable' or 'disable'\n");
+			return CMD_RET_USAGE;
+		}
+
+		ret = otp_set_ecc_policy(region_id, ecc_en);
+		if (ret) {
+			if (errno == EINVAL)
+				printf("Failed to set ECC policy for region '%s': region does not support ECC\n",
+				       argv[1]);
+			else
+				printf("Failed to set ECC policy for region '%s', ret = %d, errno = %d (%s)\n",
+				       argv[1], ret, errno, otp_cmd_errno_str(errno));
+			return CMD_RET_FAILURE;
+		}
+
+		printf("region %s ECC policy set to %s\n", argv[1], ecc_en ? "enabled" : "disabled");
+
+		return otp_ecc_policy_dump_all(global_ecc_en);
+	}
+
+	return CMD_RET_USAGE;
+}
+
 static int do_otpecc(int argc, char *const argv[])
 {
 	int ret;
 	int ecc_en = 0;
+
+	if (argc < 2)
+		return CMD_RET_USAGE;
 
 	/* Get ECC status */
 	ret = ioctl(info_cb.otp_fd, ASPEED_OTP_GET_ECC, &ecc_en);
@@ -1653,36 +1805,52 @@ static int do_otpecc(int argc, char *const argv[])
 	argv++;
 
 	if (!strcmp(argv[0], "status")) {
-		if (ecc_en == OTP_ECC_ENABLE)
+		if (ecc_en == OTP_ECC_ENABLE) {
 			printf("OTP ECC is enabled\n");
-		else
+			printf("note: this forces ECC on for every region that supports it, overriding "
+			       "that region's own 'ecc policy' setting. Regions that don't support ECC "
+			       "(rbp/strap) are unaffected and stay disabled regardless.\n");
+		} else {
 			printf("OTP ECC is disabled\n");
+			printf("note: each region's ECC now follows its own 'ecc policy' setting instead\n");
+		}
 
 		return CMD_RET_SUCCESS;
 
 	} else if (!strcmp(argv[0], "enable")) {
 		if (ecc_en == OTP_ECC_ENABLE) {
 			printf("OTP ECC is already enabled\n");
-			return CMD_RET_SUCCESS;
+		} else {
+			ret = ioctl(info_cb.otp_fd, ASPEED_OTP_SET_ECC, OTP_ECC_ENABLE);
+			if (ret)
+				return CMD_RET_FAILURE;
+
+			ecc_en = OTP_ECC_ENABLE;
+			printf("OTP ECC is enabled\n");
 		}
 
-		ret = ioctl(info_cb.otp_fd, ASPEED_OTP_SET_ECC, OTP_ECC_ENABLE);
-		if (ret)
-			return CMD_RET_FAILURE;
-
-		printf("OTP ECC is enabled\n");
+		return otp_ecc_policy_dump_all(ecc_en);
 
 	} else if (!strcmp(argv[0], "disable")) {
 		if (ecc_en == OTP_ECC_DISABLE) {
 			printf("OTP ECC is already disabled\n");
-			return CMD_RET_SUCCESS;
+		} else {
+			ret = ioctl(info_cb.otp_fd, ASPEED_OTP_SET_ECC, OTP_ECC_DISABLE);
+			if (ret)
+				return CMD_RET_FAILURE;
+
+			ecc_en = OTP_ECC_DISABLE;
+			printf("OTP ECC is disabled\n");
 		}
 
-		ret = ioctl(info_cb.otp_fd, ASPEED_OTP_SET_ECC, OTP_ECC_DISABLE);
-		if (ret)
-			return CMD_RET_FAILURE;
+		return otp_ecc_policy_dump_all(ecc_en);
 
-		printf("OTP ECC is disabled\n");
+	} else if (!strcmp(argv[0], "policy")) {
+		/* Drop the policy cmd */
+		argc--;
+		argv++;
+
+		return do_otpecc_policy(argc, argv, ecc_en);
 
 	} else {
 		return CMD_RET_USAGE;
@@ -1711,7 +1879,7 @@ static struct cmd_tbl cmd_otp[] = {
 	{ "prog",    3, do_otpprog  },
 	{ "pb",      7, do_otppb    },
 	{ "patch",   6, do_otppatch },
-	{ "ecc",     3, do_otpecc   },
+	{ "ecc",     6, do_otpecc   },
 	{ "info",    3, do_otpinfo  },
 	{ "dump",    4, do_otpdump  }
 };
@@ -1729,6 +1897,8 @@ static void usage(void)
 	       "\totp <dev> patch prog <dram_addr> <otp_w_offset> <w_count>\n"
 	       "\totp <dev> patch enable pre|post <otp_start_w_offset> <w_count>\n"
 	       "\totp <dev> ecc status|enable|disable\n"
+	       "\totp <dev> ecc policy dump\n"
+	       "\totp <dev> ecc policy set rom|conf|strap-ext|u-data|s-data|cptra|puf enable|disable\n"
 	       "\totp <dev> dump <file> [--skip_locked_regions]\n");
 }
 

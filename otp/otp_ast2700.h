@@ -33,6 +33,30 @@ enum otp_status {
 	OTP_CMD_ERR_MASTER_FAIL,    /* master protection error */
 };
 
+/*
+ * Mirrors the kernel uapi enum otp_region_id (include/uapi/linux/otp_ast2700.h).
+ * Renamed with an _ID suffix (values must stay 0-based and in the same
+ * order as the kernel enum) to avoid clashing with enum otp_region above.
+ */
+enum otp_region_id {
+	OTP_REGION_ID_ROM = 0,
+	OTP_REGION_ID_RBP,
+	OTP_REGION_ID_CFG,
+	OTP_REGION_ID_STRAP,
+	OTP_REGION_ID_STRAPEXT,
+	OTP_REGION_ID_USR,
+	OTP_REGION_ID_SEC,
+	OTP_REGION_ID_CAL,
+	OTP_REGION_ID_PUF,
+	OTP_REGION_ID_MAX,
+};
+
+struct otp_ecc_policy {
+	uint32_t region;         /* enum otp_region_id, set by caller */
+	uint32_t ecc_en;         /* 0: disabled, 1: enabled */
+	uint32_t ecc_supported;  /* GET: filled by driver, SET: ignored */
+};
+
 #define OTP_VER				"2.1.0"
 
 #define OTP_AST2700_A0			0
@@ -273,6 +297,8 @@ int otp_read_cptra(uint32_t offset, uint16_t *data);
 int otp_read_swpuf(uint32_t offset, uint16_t *data);
 
 int otp_ecc_ctrl(bool enable);
+int otp_get_ecc_policy(uint32_t region, uint32_t *ecc_en, uint32_t *ecc_supported);
+int otp_set_ecc_policy(uint32_t region, uint32_t ecc_en);
 int otp_prog(uint32_t offset, uint16_t data);
 int otp_prog_multi(uint32_t offset, uint16_t *data, int num);
 int otp_prog_data(int mode, int otp_w_offset, int bit_offset,
@@ -316,5 +342,7 @@ struct otp_revid {
 #define ASPEED_OTP_GET_ECC		_IOR(OTPIOC_BASE, 7, uint32_t)
 #define ASPEED_OTP_SET_ECC		_IO(OTPIOC_BASE, 8)
 #define ASPEED_OTP_GET_REVID		_IOR(OTPIOC_BASE, 9, struct otp_revid)
+#define ASPEED_OTP_GET_ECC_POLICY	_IOR(OTPIOC_BASE, 10, struct otp_ecc_policy)
+#define ASPEED_OTP_SET_ECC_POLICY	_IOW(OTPIOC_BASE, 11, struct otp_ecc_policy)
 
 #endif /* OTP_AST2700_H */

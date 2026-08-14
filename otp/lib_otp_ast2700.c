@@ -166,6 +166,34 @@ int otp_ecc_ctrl(bool enable)
 	return ret;
 }
 
+int otp_get_ecc_policy(uint32_t region, uint32_t *ecc_en, uint32_t *ecc_supported)
+{
+	struct otp_ecc_policy policy;
+	int ret;
+
+	policy.region = region;
+
+	ret = ioctl(info_cb.otp_fd, ASPEED_OTP_GET_ECC_POLICY, &policy);
+	if (ret)
+		return ret;
+
+	*ecc_en = policy.ecc_en;
+	*ecc_supported = policy.ecc_supported;
+
+	return 0;
+}
+
+int otp_set_ecc_policy(uint32_t region, uint32_t ecc_en)
+{
+	struct otp_ecc_policy policy;
+
+	policy.region = region;
+	policy.ecc_en = ecc_en;
+	policy.ecc_supported = 0;
+
+	return ioctl(info_cb.otp_fd, ASPEED_OTP_SET_ECC_POLICY, &policy);
+}
+
 int otp_prog(uint32_t offset, uint16_t data)
 {
 	struct otp_prog pdata;

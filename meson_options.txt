@@ -4,3 +4,11 @@ option(
     value: 'ast2600',
     description: 'Target platform for OTP utility.',
 )
+
+option(
+    'cptra-platform',
+    type: 'combo',
+    choices: ['unset', 'ast2700', 'ast2705'],
+    value: 'ast2700',
+    description: 'Which Caliptra test binary to build: aspeed-cptra (ast2700) or aspeed-cptra-mci (ast2705).',
+)

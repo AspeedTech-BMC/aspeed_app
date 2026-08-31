@@ -3269,9 +3269,9 @@ static int cmd_cptra(int fd, int num)
 static void usage(void)
 {
 	printf("Usage:\n");
-	printf("1. aspeed-cptra [-v] list\n");
+	printf("1. aspeed_cptra [-v] list\n");
 	printf("\tlist all available mailbox devices\n\n");
-	printf("2. aspeed-cptra [-v] <dev_name> <subcommand> [args...]\n");
+	printf("2. aspeed_cptra [-v] <dev_name> <subcommand> [args...]\n");
 	printf("\t-v				# verbose: dump debug info\n");
 	printf("\tall				# run all subcommands\n");
 	printf("\tlist				# list all subcommands\n");

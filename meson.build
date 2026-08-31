@@ -60,24 +60,46 @@ executable('hid_gadget_app', 'usb/hid_gadget_test.c', install: true)
 
 # cptra
 if host_machine.cpu_family() == 'aarch64'
-  mbedtls_inc = include_directories('lib/mbedtls/include')
-  mbedtls_lib_dir = meson.current_source_dir() / 'lib' / 'mbedtls' / 'library'
-  mbedtls_user_cfg = meson.current_source_dir() / 'cptra' / 'mbedtls_user_config.h'
+  # cptra-platform picks which single binary gets built -- the two are never
+  # built together. Must be set explicitly, e.g. -Dcptra-platform=ast2700.
+  cptra_platform = get_option('cptra-platform')
+  if cptra_platform not in ['ast2700', 'ast2705']
+    error('cptra-platform must be set to "ast2700" or "ast2705", e.g. -Dcptra-platform=ast2700')
+  endif
 
-  # Delegate to a wrapper script to avoid complex shell quoting issues when
-  # bitbake invokes the build commands.
-  mbedtls_make = custom_target('mbedtls_lib',
-    output: ['libmbedcrypto.a', 'libmbedx509.a', 'libmbedtls.a'],
-    command: [
-      'sh', meson.current_source_dir() / 'cptra' / 'build_mbedtls.sh',
-      meson.current_source_dir() / 'lib' / 'mbedtls',
-      mbedtls_user_cfg,
-      '@OUTDIR@'
-    ],
-    build_by_default: true)
+  if cptra_platform == 'ast2700'
+    mbedtls_inc = include_directories('lib/mbedtls/include')
+    mbedtls_lib_dir = meson.current_source_dir() / 'lib' / 'mbedtls' / 'library'
+    mbedtls_user_cfg = meson.current_source_dir() / 'cptra' / 'mbedtls_user_config.h'
 
-  executable('aspeed_cptra', 'cptra/aspeed_cptra.c', mbedtls_make,
-    install: true,
-    include_directories: mbedtls_inc,
-    c_args: ['-DMBEDTLS_USER_CONFIG_FILE="' + mbedtls_user_cfg + '"'])
+    # Delegate to a wrapper script to avoid complex shell quoting issues when
+    # bitbake invokes the build commands. CC/AR must be forwarded explicitly
+    # -- otherwise the wrapper's `make` falls back to the build machine's
+    # native toolchain and produces libs in the wrong ELF format to link
+    # against this (possibly cross-compiled) target.
+    mbedtls_cc = meson.get_compiler('c')
+    mbedtls_ar = find_program('ar')
+    mbedtls_make = custom_target('mbedtls_lib',
+      output: ['libmbedcrypto.a', 'libmbedx509.a', 'libmbedtls.a'],
+      command: [
+        'sh', meson.current_source_dir() / 'cptra' / 'build_mbedtls.sh',
+        meson.current_source_dir() / 'lib' / 'mbedtls',
+        mbedtls_user_cfg,
+        '@OUTDIR@',
+        ' '.join(mbedtls_cc.cmd_array()),
+        mbedtls_ar.full_path()
+      ],
+      depend_files: ['cptra/build_mbedtls.sh', mbedtls_user_cfg],
+      build_by_default: true)
+
+    executable('aspeed_cptra', 'cptra/aspeed_cptra.c', mbedtls_make,
+      install: true,
+      include_directories: mbedtls_inc,
+      c_args: ['-DMBEDTLS_USER_CONFIG_FILE="' + mbedtls_user_cfg + '"'])
+  elif cptra_platform == 'ast2705'
+    # Same target/output name as the ast2700 branch above -- exactly one
+    # branch ever runs per configured build, so there's no name collision.
+    executable('aspeed_cptra', 'cptra/aspeed_cptra_mci.c',
+      install: true)
+  endif
 endif

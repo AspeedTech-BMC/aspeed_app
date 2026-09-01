@@ -3378,7 +3378,12 @@ int main(int argc, char *argv[])
 			return 1;
 		}
 
-		stress_cptra(fd);
+		ret = stress_cptra(fd);
+		if (ret) {
+			printf("cptra stress test failed: %d\n", ret);
+			close(fd);
+			return 1;
+		}
 
 		close(fd);
 
@@ -3432,6 +3437,11 @@ int main(int argc, char *argv[])
 		printf("num=%d\n", num);
 		/* run cptra subcommand #num */
 		ret = cmd_cptra(fd, num);
+		if (ret) {
+			printf("cptra command failed: %d\n", ret);
+			close(fd);
+			return 1;
+		}
 
 		close(fd);
 

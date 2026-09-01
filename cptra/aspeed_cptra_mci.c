@@ -704,8 +704,11 @@ enum cptra_mci_device_lifecycle {
 
 static int gbl_mci_fd = -1;
 static int gbl_verbose;
+static int gbl_quiet;
 
 #define dbg_printf(fmt, args...)	do { if (gbl_verbose) printf(fmt, ##args); } while (0)
+/* Non-failure output; suppressed under -q so only FAIL/failed lines remain. */
+#define info_printf(fmt, args...)	do { if (!gbl_quiet) printf(fmt, ##args); } while (0)
 
 static int mci_dev_open(void)
 {
@@ -2476,7 +2479,7 @@ static int mci_test_fw_version(void)
 			printf("MC_FIRMWARE_VERSION (index %d) failed: %d\n", indexes[i], ret);
 			return -1;
 		}
-		printf("index %d: %s\n", indexes[i], version);
+		info_printf("index %d: %s\n", indexes[i], version);
 	}
 
 	return 0;
@@ -2493,7 +2496,7 @@ static int mci_reg_print(const char *label, uint32_t page, uint32_t offset)
 		return ret;
 	}
 
-	printf("  %-30s 0x%04x = 0x%08x\n", label, offset, value);
+	info_printf("  %-30s 0x%04x = 0x%08x\n", label, offset, value);
 
 	return 0;
 }
@@ -2564,7 +2567,7 @@ static int mci_test_subsystem_info(void)
 	uint32_t value = 0, lifecycle;
 	int ret;
 
-	printf("\n== mci_reg (page 0x%04x) ==\n", CPTRA_MCI_REG_PAGE);
+	info_printf("\n== mci_reg (page 0x%04x) ==\n", CPTRA_MCI_REG_PAGE);
 
 	if (mci_reg_print("MCU_IFU_AXI_USER", CPTRA_MCI_REG_PAGE, CPTRA_MCI_REG_MCU_IFU_AXI_USER))
 		return -1;
@@ -2582,12 +2585,12 @@ static int mci_test_subsystem_info(void)
 		printf("  RESET_REASON: read failed: %d\n", ret);
 		return -1;
 	}
-	printf("  %-30s 0x%04x = 0x%08x\n", "RESET_REASON", CPTRA_MCI_REG_RESET_REASON, value);
-	printf("        WARM_RESET            = %u\n",
+	info_printf("  %-30s 0x%04x = 0x%08x\n", "RESET_REASON", CPTRA_MCI_REG_RESET_REASON, value);
+	info_printf("        WARM_RESET            = %u\n",
 	       !!(value & CPTRA_MCI_REG_RESET_REASON_WARM_RESET));
-	printf("        FW_BOOT_UPD_RESET     = %u\n",
+	info_printf("        FW_BOOT_UPD_RESET     = %u\n",
 	       !!(value & CPTRA_MCI_REG_RESET_REASON_FW_BOOT_UPD_RESET));
-	printf("        FW_HITLESS_UPD_RESET  = %u\n",
+	info_printf("        FW_HITLESS_UPD_RESET  = %u\n",
 	       !!(value & CPTRA_MCI_REG_RESET_REASON_FW_HITLESS_UPD_RESET));
 
 	ret = mci_reg_read(CPTRA_MCI_REG_PAGE, CPTRA_MCI_REG_SECURITY_STATE, &value);
@@ -2595,13 +2598,13 @@ static int mci_test_subsystem_info(void)
 		printf("  SECURITY_STATE: read failed: %d\n", ret);
 		return -1;
 	}
-	printf("  %-30s 0x%04x = 0x%08x\n", "SECURITY_STATE", CPTRA_MCI_REG_SECURITY_STATE, value);
+	info_printf("  %-30s 0x%04x = 0x%08x\n", "SECURITY_STATE", CPTRA_MCI_REG_SECURITY_STATE, value);
 	lifecycle = value & CPTRA_MCI_REG_SECURITY_STATE_DEVICE_LIFECYCLE_MASK;
-	printf("        device_lifecycle      = %u (%s)\n", lifecycle,
+	info_printf("        device_lifecycle      = %u (%s)\n", lifecycle,
 	       mci_device_lifecycle_name(lifecycle));
-	printf("        debug_locked          = %u\n",
+	info_printf("        debug_locked          = %u\n",
 	       !!(value & CPTRA_MCI_REG_SECURITY_STATE_DEBUG_LOCKED));
-	printf("        scan_mode             = %u\n",
+	info_printf("        scan_mode             = %u\n",
 	       !!(value & CPTRA_MCI_REG_SECURITY_STATE_SCAN_MODE));
 
 	if (mci_reg_print_array("MBOX0_VALID_AXI_USER", CPTRA_MCI_REG_PAGE,
@@ -2625,18 +2628,18 @@ static int mci_test_subsystem_info(void)
 	if (mci_reg_print("SS_CONFIG_DONE", CPTRA_MCI_REG_PAGE, CPTRA_MCI_REG_SS_CONFIG_DONE))
 		return -1;
 
-	printf("\n== soc_ifc_reg (page 0x%04x) ==\n", CPTRA_MCI_SOC_IFC_PAGE);
+	info_printf("\n== soc_ifc_reg (page 0x%04x) ==\n", CPTRA_MCI_SOC_IFC_PAGE);
 
 	ret = mci_reg_read(CPTRA_MCI_SOC_IFC_PAGE, CPTRA_MCI_SOC_IFC_CPTRA_RESET_REASON, &value);
 	if (ret) {
 		printf("  CPTRA_RESET_REASON: read failed: %d\n", ret);
 		return -1;
 	}
-	printf("  %-30s 0x%04x = 0x%08x\n", "CPTRA_RESET_REASON",
+	info_printf("  %-30s 0x%04x = 0x%08x\n", "CPTRA_RESET_REASON",
 	       CPTRA_MCI_SOC_IFC_CPTRA_RESET_REASON, value);
-	printf("        WARM_RESET            = %u\n",
+	info_printf("        WARM_RESET            = %u\n",
 	       !!(value & CPTRA_MCI_SOC_IFC_CPTRA_RESET_REASON_WARM_RESET));
-	printf("        FW_UPD_RESET          = %u\n",
+	info_printf("        FW_UPD_RESET          = %u\n",
 	       !!(value & CPTRA_MCI_SOC_IFC_CPTRA_RESET_REASON_FW_UPD_RESET));
 
 	ret = mci_reg_read(CPTRA_MCI_SOC_IFC_PAGE, CPTRA_MCI_SOC_IFC_CPTRA_SECURITY_STATE, &value);
@@ -2644,14 +2647,14 @@ static int mci_test_subsystem_info(void)
 		printf("  CPTRA_SECURITY_STATE: read failed: %d\n", ret);
 		return -1;
 	}
-	printf("  %-30s 0x%04x = 0x%08x\n", "CPTRA_SECURITY_STATE",
+	info_printf("  %-30s 0x%04x = 0x%08x\n", "CPTRA_SECURITY_STATE",
 	       CPTRA_MCI_SOC_IFC_CPTRA_SECURITY_STATE, value);
 	lifecycle = value & CPTRA_MCI_SOC_IFC_CPTRA_SECURITY_STATE_DEVICE_LIFECYCLE_MASK;
-	printf("        device_lifecycle      = %u (%s)\n", lifecycle,
+	info_printf("        device_lifecycle      = %u (%s)\n", lifecycle,
 	       mci_device_lifecycle_name(lifecycle));
-	printf("        debug_locked          = %u\n",
+	info_printf("        debug_locked          = %u\n",
 	       !!(value & CPTRA_MCI_SOC_IFC_CPTRA_SECURITY_STATE_DEBUG_LOCKED));
-	printf("        scan_mode             = %u\n",
+	info_printf("        scan_mode             = %u\n",
 	       !!(value & CPTRA_MCI_SOC_IFC_CPTRA_SECURITY_STATE_SCAN_MODE));
 
 	if (mci_reg_print_array("CPTRA_MBOX_VALID_AXI_USER", CPTRA_MCI_SOC_IFC_PAGE,
@@ -2692,7 +2695,7 @@ static int mci_sha_test_one(uint32_t algo, const char *label, const uint8_t *exp
 		return -1;
 	}
 
-	printf("%s: \033[1;32mPASS\033[0m\n", label);
+	info_printf("%s: \033[1;32mPASS\033[0m\n", label);
 
 	return 0;
 }
@@ -2738,8 +2741,6 @@ static int mci_test_sig_verify(void)
 		uint8_t hash[CPTRA_MCI_SHA384_DIGEST_SIZE], bad_hash[CPTRA_MCI_SHA384_DIGEST_SIZE];
 		int i;
 
-		printf("-- ECDSA384 --\n");
-
 		ret = mci_import_key(CPTRA_MCI_KEY_USAGE_ECDSA, seed, sizeof(seed), cmk);
 		if (ret) {
 			printf("MC_IMPORT failed: %d\n", ret);
@@ -2757,7 +2758,7 @@ static int mci_test_sig_verify(void)
 			printf("MC_ECDSA_CMK_PUBLIC_KEY: \033[1;31mFAIL\033[0m (public key mismatch)\n");
 			return -1;
 		}
-		printf("MC_ECDSA_CMK_PUBLIC_KEY: \033[1;32mPASS\033[0m (matches known-answer vector)\n");
+		dbg_printf("MC_ECDSA_CMK_PUBLIC_KEY: \033[1;32mPASS\033[0m (matches known-answer vector)\n");
 
 		for (i = 0; i < (int)sizeof(message); i++)
 			message[i] = (uint8_t)i;
@@ -2780,7 +2781,7 @@ static int mci_test_sig_verify(void)
 			printf("MC_ECDSA384_SIG_VERIFY positive case \033[1;31mFAIL\033[0m (expected \033[1;32mPASS\033[0m): %d\n", ret);
 			return -1;
 		}
-		printf("MC_ECDSA384_SIG_VERIFY positive case: \033[1;32mPASS\033[0m (agrees with the Cmk-based signature)\n");
+		dbg_printf("MC_ECDSA384_SIG_VERIFY positive case: \033[1;32mPASS\033[0m (agrees with the Cmk-based signature)\n");
 
 		memcpy(bad_hash, hash, sizeof(hash));
 		bad_hash[0] ^= 0xff;
@@ -2790,7 +2791,9 @@ static int mci_test_sig_verify(void)
 			printf("MC_ECDSA384_SIG_VERIFY negative case \033[1;31mFAIL\033[0m (tampered digest accepted!)\n");
 			return -1;
 		}
-		printf("MC_ECDSA384_SIG_VERIFY negative case: \033[1;32mPASS\033[0m (tampered digest correctly rejected)\n");
+		dbg_printf("MC_ECDSA384_SIG_VERIFY negative case: \033[1;32mPASS\033[0m (tampered digest correctly rejected)\n");
+
+		info_printf("MC_ECDSA384: \033[1;32mPASS\033[0m\n");
 	}
 
 	/* -------- ML-DSA-87 -------- */
@@ -2801,8 +2804,6 @@ static int mci_test_sig_verify(void)
 		uint8_t cmk[CPTRA_MCI_CMK_SIZE];
 		uint8_t message[CPTRA_MCI_ECC384_SCALAR_SIZE], bad_message[CPTRA_MCI_ECC384_SCALAR_SIZE];
 		int i;
-
-		printf("-- ML-DSA-87 --\n");
 
 		ret = mci_import_key(CPTRA_MCI_KEY_USAGE_MLDSA, seed, sizeof(seed), cmk);
 		if (ret) {
@@ -2821,7 +2822,7 @@ static int mci_test_sig_verify(void)
 			printf("MC_MLDSA_CMK_PUBLIC_KEY: \033[1;31mFAIL\033[0m (public key mismatch)\n");
 			return -1;
 		}
-		printf("MC_MLDSA_CMK_PUBLIC_KEY: \033[1;32mPASS\033[0m (matches known-answer vector prefix)\n");
+		dbg_printf("MC_MLDSA_CMK_PUBLIC_KEY: \033[1;32mPASS\033[0m (matches known-answer vector prefix)\n");
 
 		for (i = 0; i < (int)sizeof(message); i++)
 			message[i] = (uint8_t)i;
@@ -2837,7 +2838,7 @@ static int mci_test_sig_verify(void)
 			printf("MC_MLDSA87_SIG_VERIFY positive case \033[1;31mFAIL\033[0m (expected \033[1;32mPASS\033[0m): %d\n", ret);
 			return -1;
 		}
-		printf("MC_MLDSA87_SIG_VERIFY positive case: \033[1;32mPASS\033[0m (agrees with the Cmk-based signature)\n");
+		dbg_printf("MC_MLDSA87_SIG_VERIFY positive case: \033[1;32mPASS\033[0m (agrees with the Cmk-based signature)\n");
 
 		memcpy(bad_message, message, sizeof(message));
 		bad_message[0] ^= 0xff;
@@ -2847,14 +2848,14 @@ static int mci_test_sig_verify(void)
 			printf("MC_MLDSA87_SIG_VERIFY negative case \033[1;31mFAIL\033[0m (tampered message accepted!)\n");
 			return -1;
 		}
-		printf("MC_MLDSA87_SIG_VERIFY negative case: \033[1;32mPASS\033[0m (tampered message correctly rejected)\n");
+		dbg_printf("MC_MLDSA87_SIG_VERIFY negative case: \033[1;32mPASS\033[0m (tampered message correctly rejected)\n");
+
+		info_printf("MC_MLDSA87: \033[1;32mPASS\033[0m\n");
 	}
 
 	/* -------- LMS -------- */
 	{
 		uint8_t hash[CPTRA_MCI_LMS_HASH_SIZE];
-
-		printf("-- LMS --\n");
 
 		memcpy(hash, mci_lms_test_hash, sizeof(hash));
 
@@ -2867,7 +2868,7 @@ static int mci_test_sig_verify(void)
 			printf("MC_LMS_SIG_VERIFY positive case \033[1;31mFAIL\033[0m (expected \033[1;32mPASS\033[0m): %d\n", ret);
 			return -1;
 		}
-		printf("MC_LMS_SIG_VERIFY positive case: \033[1;32mPASS\033[0m\n");
+		dbg_printf("MC_LMS_SIG_VERIFY positive case: \033[1;32mPASS\033[0m\n");
 
 		hash[0] ^= 0xff;
 
@@ -2880,7 +2881,9 @@ static int mci_test_sig_verify(void)
 			printf("MC_LMS_SIG_VERIFY negative case \033[1;31mFAIL\033[0m (a tampered digest was accepted!)\n");
 			return -1;
 		}
-		printf("MC_LMS_SIG_VERIFY negative case: \033[1;32mPASS\033[0m (tampered digest correctly rejected)\n");
+		dbg_printf("MC_LMS_SIG_VERIFY negative case: \033[1;32mPASS\033[0m (tampered digest correctly rejected)\n");
+
+		info_printf("MC_LMS: \033[1;32mPASS\033[0m\n");
 	}
 
 	return 0;
@@ -2918,7 +2921,7 @@ static int mci_test_cm_ecdsa_verify(void)
 		printf("MC_ECDSA_CMK_PUBLIC_KEY: \033[1;31mFAIL\033[0m (public key mismatch)\n");
 		return -1;
 	}
-	printf("MC_ECDSA_CMK_PUBLIC_KEY: \033[1;32mPASS\033[0m (matches known-answer vector)\n");
+	dbg_printf("MC_ECDSA_CMK_PUBLIC_KEY: \033[1;32mPASS\033[0m (matches known-answer vector)\n");
 
 	for (i = 0; i < (int)sizeof(message); i++)
 		message[i] = (uint8_t)i;
@@ -2934,7 +2937,7 @@ static int mci_test_cm_ecdsa_verify(void)
 		printf("MC_ECDSA_CMK_VERIFY positive case \033[1;31mFAIL\033[0m (expected \033[1;32mPASS\033[0m): %d\n", ret);
 		return -1;
 	}
-	printf("MC_ECDSA_CMK_VERIFY positive case: \033[1;32mPASS\033[0m\n");
+	dbg_printf("MC_ECDSA_CMK_VERIFY positive case: \033[1;32mPASS\033[0m\n");
 
 	memcpy(bad_message, message, sizeof(message));
 	bad_message[0] ^= 0xff;
@@ -2944,7 +2947,7 @@ static int mci_test_cm_ecdsa_verify(void)
 		printf("MC_ECDSA_CMK_VERIFY negative case \033[1;31mFAIL\033[0m (tampered message accepted!)\n");
 		return -1;
 	}
-	printf("MC_ECDSA_CMK_VERIFY negative case: \033[1;32mPASS\033[0m (tampered message correctly rejected)\n");
+	dbg_printf("MC_ECDSA_CMK_VERIFY negative case: \033[1;32mPASS\033[0m (tampered message correctly rejected)\n");
 
 	return 0;
 }
@@ -2976,7 +2979,7 @@ static int mci_test_cm_mldsa_verify(void)
 		printf("MC_MLDSA_CMK_PUBLIC_KEY: \033[1;31mFAIL\033[0m (public key mismatch)\n");
 		return -1;
 	}
-	printf("MC_MLDSA_CMK_PUBLIC_KEY: \033[1;32mPASS\033[0m (matches known-answer vector prefix)\n");
+	dbg_printf("MC_MLDSA_CMK_PUBLIC_KEY: \033[1;32mPASS\033[0m (matches known-answer vector prefix)\n");
 
 	for (i = 0; i < (int)sizeof(message); i++)
 		message[i] = (uint8_t)i;
@@ -2992,7 +2995,7 @@ static int mci_test_cm_mldsa_verify(void)
 		printf("MC_MLDSA_CMK_VERIFY positive case \033[1;31mFAIL\033[0m (expected \033[1;32mPASS\033[0m): %d\n", ret);
 		return -1;
 	}
-	printf("MC_MLDSA_CMK_VERIFY positive case: \033[1;32mPASS\033[0m\n");
+	dbg_printf("MC_MLDSA_CMK_VERIFY positive case: \033[1;32mPASS\033[0m\n");
 
 	memcpy(bad_message, message, sizeof(message));
 	bad_message[0] ^= 0xff;
@@ -3002,7 +3005,7 @@ static int mci_test_cm_mldsa_verify(void)
 		printf("MC_MLDSA_CMK_VERIFY negative case \033[1;31mFAIL\033[0m (tampered message accepted!)\n");
 		return -1;
 	}
-	printf("MC_MLDSA_CMK_VERIFY negative case: \033[1;32mPASS\033[0m (tampered message correctly rejected)\n");
+	dbg_printf("MC_MLDSA_CMK_VERIFY negative case: \033[1;32mPASS\033[0m (tampered message correctly rejected)\n");
 
 	return 0;
 }
@@ -3011,11 +3014,11 @@ static void dbg_hexdump(const uint8_t *buf, uint32_t len, const char *label)
 {
 	uint32_t i;
 
-	printf("%s (%u bytes)\n", label, len);
+	info_printf("%s (%u bytes)\n", label, len);
 	for (i = 0; i < len; i++) {
-		printf("%02x", buf[i]);
-		if ((i & 0xf) == 0xf || i == len - 1)
-			printf("\n");
+		info_printf("%02x", buf[i]);
+		if ((i & 0x1f) == 0x1f || i == len - 1)
+			info_printf("\n");
 	}
 }
 
@@ -3031,7 +3034,7 @@ static int mci_test_device_caps(void)
 	}
 
 	dbg_hexdump(caps, sizeof(caps), "device_caps:");
-	printf("MC_DEVICE_CAPABILITIES: \033[1;32mPASS\033[0m\n");
+	info_printf("MC_DEVICE_CAPABILITIES: \033[1;32mPASS\033[0m\n");
 
 	return 0;
 }
@@ -3047,8 +3050,8 @@ static int mci_test_cm_status(void)
 		return -1;
 	}
 
-	printf("used_usage_storage=%u total_usage_storage=%u\n", used, total);
-	printf("MC_CM_STATUS: \033[1;32mPASS\033[0m\n");
+	info_printf("used_usage_storage=%u total_usage_storage=%u\n", used, total);
+	info_printf("MC_CM_STATUS: \033[1;32mPASS\033[0m\n");
 
 	return 0;
 }
@@ -3066,9 +3069,9 @@ static int __attribute__((unused)) mci_test_get_log(void)
 		return -1;
 	}
 
-	printf("log data_len=%u\n", data_len);
+	info_printf("log data_len=%u\n", data_len);
 	dbg_hexdump(buf, data_len < 256 ? data_len : 256, "get_log (first 256B):");
-	printf("MC_GET_LOG: \033[1;32mPASS\033[0m\n");
+	info_printf("MC_GET_LOG: \033[1;32mPASS\033[0m\n");
 
 	return 0;
 }
@@ -3084,7 +3087,7 @@ static int __attribute__((unused)) mci_test_clear_log(void)
 		return -1;
 	}
 
-	printf("MC_CLEAR_LOG: \033[1;32mPASS\033[0m\n");
+	info_printf("MC_CLEAR_LOG: \033[1;32mPASS\033[0m\n");
 
 	return 0;
 }
@@ -3101,7 +3104,7 @@ static int mci_test_auth_challenge(void)
 	}
 
 	dbg_hexdump(challenge, sizeof(challenge), "auth_challenge:");
-	printf("MC_GET_AUTH_CMD_CHALLENGE: \033[1;32mPASS\033[0m\n");
+	info_printf("MC_GET_AUTH_CMD_CHALLENGE: \033[1;32mPASS\033[0m\n");
 
 	return 0;
 }
@@ -3121,42 +3124,73 @@ static int __attribute__((unused)) mci_test_export_csr(void)
 		return -1;
 	}
 
-	printf("csr data_len=%u\n", data_len);
+	info_printf("csr data_len=%u\n", data_len);
 	dbg_hexdump(buf, data_len < 256 ? data_len : 256, "export_csr (first 256B):");
-	printf("MC_EXPORT_ATTESTED_CSR: \033[1;32mPASS\033[0m\n");
+	info_printf("MC_EXPORT_ATTESTED_CSR: \033[1;32mPASS\033[0m\n");
 
 	return 0;
 }
 
-/* MC_RANDOM_STIR + MC_RANDOM_GENERATE smoke test (no KAT: output is non-deterministic by design). */
+/*
+ * MC_RANDOM_STIR + MC_RANDOM_GENERATE statistical sanity test (see
+ * caliptra-mcu-sw's cm_trng_test, also ported to zephyr-mcu-runtime's
+ * cptra_mci_shell.c): stirs a fixed seed, then generates a run of
+ * fixed-size chunks and checks that no chunk repeats another chunk within
+ * a trailing window -- not a full NIST randomness test suite, but enough
+ * to catch a stuck/degenerate CSRNG (no KAT: output is non-deterministic
+ * by design).
+ */
+#define MCI_TRNG_TEST_CHUNK_SIZE	64
+#define MCI_TRNG_TEST_WINDOW		10
+#define MCI_TRNG_TEST_ITERATIONS	100
+
 static int mci_test_trng(void)
 {
-	uint8_t input[32];
-	uint8_t out[32];
-	uint32_t out_len = 0;
-	int ret, i;
+	static uint8_t window[MCI_TRNG_TEST_CHUNK_SIZE * MCI_TRNG_TEST_WINDOW];
+	uint8_t seed[32];
+	uint32_t out_len;
+	int ret, i, j;
 
-	for (i = 0; i < (int)sizeof(input); i++)
-		input[i] = (uint8_t)(i * 7 + 1);
+	for (i = 0; i < (int)sizeof(seed); i++)
+		seed[i] = (uint8_t)(i * 7 + 1);
 
-	ret = mci_random_stir(input, sizeof(input));
+	ret = mci_random_stir(seed, sizeof(seed));
 	if (ret) {
 		printf("MC_RANDOM_STIR failed: %d\n", ret);
 		return -1;
 	}
-	printf("MC_RANDOM_STIR: \033[1;32mPASS\033[0m\n");
+	info_printf("MC_RANDOM_STIR: \033[1;32mPASS\033[0m\n");
 
-	ret = mci_random_generate(sizeof(out), out, &out_len);
-	if (ret) {
-		printf("MC_RANDOM_GENERATE failed: %d\n", ret);
-		return -1;
+	for (i = 0; i < MCI_TRNG_TEST_ITERATIONS; i++) {
+		int offset = (i % MCI_TRNG_TEST_WINDOW) * MCI_TRNG_TEST_CHUNK_SIZE;
+
+		ret = mci_random_generate(MCI_TRNG_TEST_CHUNK_SIZE, &window[offset], &out_len);
+		if (ret) {
+			printf("MC_RANDOM_GENERATE failed at iteration %d: %d\n", i, ret);
+			return -1;
+		}
+		if (out_len != MCI_TRNG_TEST_CHUNK_SIZE) {
+			printf("MC_RANDOM_GENERATE: \033[1;31mFAIL\033[0m (iteration %d: expected %d bytes, got %u)\n",
+			       i, MCI_TRNG_TEST_CHUNK_SIZE, out_len);
+			return -1;
+		}
+
+		if (i < MCI_TRNG_TEST_WINDOW - 1)
+			continue; /* let the TRNG warm up before checking for repeats */
+
+		for (j = 0; j < MCI_TRNG_TEST_WINDOW - 1; j++) {
+			int cmp_offset = ((i - j - 1) % MCI_TRNG_TEST_WINDOW) * MCI_TRNG_TEST_CHUNK_SIZE;
+
+			if (memcmp(&window[offset], &window[cmp_offset], MCI_TRNG_TEST_CHUNK_SIZE) == 0) {
+				printf("MC_RANDOM_GENERATE: \033[1;31mFAIL\033[0m (output at iteration %d repeats output from iteration %d)\n",
+				       i, i - j - 1);
+				return -1;
+			}
+		}
 	}
-	if (out_len != sizeof(out)) {
-		printf("MC_RANDOM_GENERATE: \033[1;31mFAIL\033[0m (expected %zu bytes, got %u)\n", sizeof(out), out_len);
-		return -1;
-	}
-	dbg_hexdump(out, out_len, "random_generate:");
-	printf("MC_RANDOM_GENERATE: \033[1;32mPASS\033[0m (%u bytes)\n", out_len);
+
+	info_printf("MC_RANDOM_GENERATE: \033[1;32mPASS\033[0m (%d chunks of %d bytes, no repeats within a %d-chunk window)\n",
+	       MCI_TRNG_TEST_ITERATIONS, MCI_TRNG_TEST_CHUNK_SIZE, MCI_TRNG_TEST_WINDOW);
 
 	return 0;
 }
@@ -3191,7 +3225,7 @@ static int mci_hmac_test_run(const char *label, uint32_t algo, size_t key_len, c
 		return -1;
 	}
 
-	printf("%s: \033[1;32mPASS\033[0m\n", label);
+	dbg_printf("%s: \033[1;32mPASS\033[0m\n", label);
 
 	return 0;
 }
@@ -3223,7 +3257,7 @@ static int mci_test_hmac(void)
 			      mci_hmac_test_sha512_2, sizeof(mci_hmac_test_sha512_2)))
 		return -1;
 
-	printf("MC_HMAC: \033[1;32mPASS\033[0m (all 4 RFC 4231 known-answer cases matched)\n");
+	info_printf("MC_HMAC: \033[1;32mPASS\033[0m (all 4 RFC 4231 known-answer cases matched)\n");
 
 	return 0;
 }
@@ -3284,7 +3318,7 @@ static int mci_test_hkdf(void)
 		printf("HMAC-KDF-Counter: \033[1;31mFAIL\033[0m (derived key does not match known-answer vector)\n");
 		return -1;
 	}
-	printf("HMAC-KDF-Counter: \033[1;32mPASS\033[0m\n");
+	dbg_printf("HMAC-KDF-Counter: \033[1;32mPASS\033[0m\n");
 
 	/* HKDF-Extract+Expand mode. */
 	ret = mci_import_key(CPTRA_MCI_KEY_USAGE_HMAC, mci_hkdf_ee_salt, sizeof(mci_hkdf_ee_salt), salt);
@@ -3322,9 +3356,9 @@ static int mci_test_hkdf(void)
 		printf("HKDF-Extract+Expand: \033[1;31mFAIL\033[0m (derived key does not match known-answer vector)\n");
 		return -1;
 	}
-	printf("HKDF-Extract+Expand: \033[1;32mPASS\033[0m\n");
+	dbg_printf("HKDF-Extract+Expand: \033[1;32mPASS\033[0m\n");
 
-	printf("MC_HMAC_KDF_COUNTER/MC_HKDF_EXTRACT+EXPAND: \033[1;32mPASS\033[0m (both known-answer cases matched)\n");
+	info_printf("MC_HMAC_KDF_COUNTER/MC_HKDF_EXTRACT+EXPAND: \033[1;32mPASS\033[0m (both known-answer cases matched)\n");
 
 	return 0;
 }
@@ -3388,7 +3422,7 @@ static int mci_test_ecdh(void)
 		printf("MC_ECDH_GENERATE/FINISH: \033[1;31mFAIL\033[0m (alice/bob derived different shared secrets)\n");
 		return -1;
 	}
-	printf("MC_ECDH_GENERATE/FINISH: \033[1;32mPASS\033[0m (alice and bob agree on the shared secret)\n");
+	info_printf("MC_ECDH_GENERATE/FINISH: \033[1;32mPASS\033[0m (alice and bob agree on the shared secret)\n");
 
 	return 0;
 }
@@ -3463,7 +3497,7 @@ static int mci_test_aes(void)
 		printf("MC_AES_ENCRYPT/DECRYPT: \033[1;31mFAIL\033[0m (chunk 2 round trip mismatch)\n");
 		return -1;
 	}
-	printf("MC_AES_ENCRYPT/DECRYPT (init+update): \033[1;32mPASS\033[0m (round-tripped %zu bytes across 2 chunks)\n",
+	info_printf("MC_AES_ENCRYPT/DECRYPT (init+update): \033[1;32mPASS\033[0m (round-tripped %zu bytes across 2 chunks)\n",
 	       sizeof(plain1) + sizeof(plain2));
 
 	ret = mci_delete_key(cmk);
@@ -3558,7 +3592,7 @@ static int mci_test_aes_gcm(void)
 		printf("MC_AES_GCM positive case \033[1;31mFAIL\033[0m (expected verified tag + matching plaintext)\n");
 		return -1;
 	}
-	printf("MC_AES_GCM positive case: \033[1;32mPASS\033[0m (tag verified, plaintext matches)\n");
+	info_printf("MC_AES_GCM positive case: \033[1;32mPASS\033[0m (tag verified, plaintext matches)\n");
 
 	/* Negative case: tampered tag, fresh decrypt context (context is consumed by decrypt_final). */
 	ret = mci_aes_gcm_decrypt_init(0, cmk, iv, NULL, 0, dec_context);
@@ -3587,7 +3621,7 @@ static int mci_test_aes_gcm(void)
 		printf("MC_AES_GCM negative case \033[1;31mFAIL\033[0m (a tampered tag was accepted!)\n");
 		return -1;
 	}
-	printf("MC_AES_GCM negative case: \033[1;32mPASS\033[0m (tampered tag correctly rejected)\n");
+	info_printf("MC_AES_GCM negative case: \033[1;32mPASS\033[0m (tampered tag correctly rejected)\n");
 
 	ret = mci_delete_key(cmk);
 	if (ret) {
@@ -3668,7 +3702,7 @@ static int mci_stress(void)
 	int i, j, ret;
 
 	for (i = 0; i < MCI_STRESS_ITERATIONS; i++) {
-		printf("Iteration %d/%d\n", i + 1, MCI_STRESS_ITERATIONS);
+		info_printf("Iteration %d/%d\n", i + 1, MCI_STRESS_ITERATIONS);
 		for (j = 0; j < (int)ARRAY_SIZE(mci_tests); j++) {
 			if (strcmp(mci_tests[j].name, "subsystem_info") == 0)
 				continue;
@@ -3681,7 +3715,7 @@ static int mci_stress(void)
 		}
 	}
 
-	printf("Stress test completed successfully (%d iterations).\n", MCI_STRESS_ITERATIONS);
+	info_printf("Stress test completed successfully (%d iterations).\n", MCI_STRESS_ITERATIONS);
 
 	return 0;
 }
@@ -3693,16 +3727,18 @@ static void usage(const char *prog)
 	size_t i;
 
 	printf("Usage:\n");
-	printf("  %s [-v] all\n", prog);
+	printf("  %s [-v] [-q] all\n", prog);
 	printf("      run all tests\n");
-	printf("  %s [-v] stress\n", prog);
+	printf("  %s [-v] [-q] stress\n", prog);
 	printf("      run all tests (except subsystem_info) for %d iterations\n", MCI_STRESS_ITERATIONS);
 	printf("  %s [-v] list\n", prog);
 	printf("      list all available tests\n");
-	printf("  %s [-v] <test_name>\n", prog);
+	printf("  %s [-v] [-q] <test_name>\n", prog);
 	printf("      run a single test; test_name one of:\n");
 	for (i = 0; i < ARRAY_SIZE(mci_tests); i++)
 		printf("        %s\n", mci_tests[i].name);
+	printf("\t-v\t\t\t\t# verbose: dump extra debug info\n");
+	printf("\t-q\t\t\t\t# quiet: print nothing but FAIL/failed lines\n");
 }
 
 int main(int argc, char *argv[])
@@ -3714,8 +3750,11 @@ int main(int argc, char *argv[])
 	int total = 0, failed = 0;
 	size_t i;
 
-	while (arg_i < argc && strcmp(argv[arg_i], "-v") == 0) {
-		gbl_verbose = 1;
+	while (arg_i < argc && (strcmp(argv[arg_i], "-v") == 0 || strcmp(argv[arg_i], "-q") == 0)) {
+		if (strcmp(argv[arg_i], "-v") == 0)
+			gbl_verbose = 1;
+		else
+			gbl_quiet = 1;
 		arg_i++;
 	}
 
@@ -3768,19 +3807,22 @@ int main(int argc, char *argv[])
 
 	if (run_all) {
 		for (i = 0; i < ARRAY_SIZE(mci_tests); i++) {
-			printf("== %s ==\n", mci_tests[i].name);
+			info_printf("== %s ==\n", mci_tests[i].name);
 			total++;
 			if (mci_tests[i].func()) {
 				printf("%s: \033[1;31mFAILED\033[0m\n\n", mci_tests[i].name);
 				failed++;
 			} else {
-				printf("%s: \033[1;32mPASSED\033[0m\n\n", mci_tests[i].name);
+				info_printf("%s: \033[1;32mPASSED\033[0m\n\n", mci_tests[i].name);
 			}
 		}
 		printf("Total: %d, Passed: %d, Failed: %d\n", total, total - failed, failed);
 	} else {
 		failed = mci_tests[test_idx].func() ? 1 : 0;
-		printf("%s: %s\n", mci_tests[test_idx].name, failed ? "\033[1;31mFAILED\033[0m" : "\033[1;32mPASSED\033[0m");
+		if (failed)
+			printf("%s: \033[1;31mFAILED\033[0m\n", mci_tests[test_idx].name);
+		else
+			info_printf("%s: \033[1;32mPASSED\033[0m\n", mci_tests[test_idx].name);
 	}
 
 	mci_dev_close();

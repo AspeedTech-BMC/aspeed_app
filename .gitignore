@@ -1,1 +1,27 @@
 *.o
+*.a
+*.so
+*.d
+
+# meson
+/build/
+
+# Per-tool binaries built in-tree by their own Makefiles (no shared
+# extension to match generically, so list them by path).
+/ast_rvas/rvas_test
+/ast_rvas/vtest
+/cptra/aspeed-cptra
+/cptra/aspeed_cptra
+/espi_test/oob-pch-test
+/i2c-slave-mqueue/i2c-slave-mqueue
+/i2c-test/i2c-test
+/i3c-test/i3c-test
+/mbox/aspeed-mbox
+/mctp-i3c/mctp-i3c
+/mctp/mctp-ast
+/mem_utils/md
+/mem_utils/mw
+/otp/otp_app
+/svf/svf
+/usb/hid_gadget_app
+/video/ast-video

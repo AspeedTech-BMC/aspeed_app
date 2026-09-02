@@ -1997,7 +1997,7 @@ static int cptra_sha384_init(void)
 	ctx.algo = CRYPTO_HASH_ALGO_SHA384;
 
 	/* Copy input data structure into shared memory */
-	memcpy((void *)shared_mem_in, &ctx, sizeof(struct cptra_hash_ctx));
+	safe_memcpy(shared_mem_in, (volatile uint8_t *)&ctx, sizeof(struct cptra_hash_ctx));
 
 	ret = cptra_ipc_trigger(ipccmd, data, sizeof(data));
 	if (ret) {
@@ -2039,7 +2039,7 @@ static int cptra_sha384_update(uint8_t *msg, int msg_size)
 	ctx.in_buf = (uint32_t)(uintptr_t)p8_bmcu_in + sizeof(struct cptra_hash_ctx);
 
 	/* Copy input data structure into shared memory */
-	memcpy((void *)shared_mem_in, &ctx, sizeof(struct cptra_hash_ctx));
+	safe_memcpy(shared_mem_in, (volatile uint8_t *)&ctx, sizeof(struct cptra_hash_ctx));
 	p8 += sizeof(struct cptra_hash_ctx);
 
 	/* Copy input data into shared memory */
@@ -2085,7 +2085,7 @@ static int cptra_sha384_final(uint8_t *output, int output_size)
 	ctx.out_buf = (uint32_t)(uintptr_t)p8_bmcu_out;
 
 	/* Copy input data structure into shared memory */
-	memcpy((void *)shared_mem_in, &ctx, sizeof(struct cptra_hash_ctx));
+	safe_memcpy(shared_mem_in, (volatile uint8_t *)&ctx, sizeof(struct cptra_hash_ctx));
 
 	ret = cptra_ipc_trigger(ipccmd, data, sizeof(data));
 	if (ret) {

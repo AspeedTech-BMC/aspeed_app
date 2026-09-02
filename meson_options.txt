@@ -2,7 +2,7 @@ option(
     'otp-platform',
     type: 'string',
     value: 'ast2600',
-    description: 'Target platform for OTP utility.',
+    description: 'Target platform for OTP utility (ast2600, ast2700, ast2705).',
 )
 
 option(

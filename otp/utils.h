@@ -10,7 +10,7 @@
 #define GENMASK(h, l) (((~0UL) - (1UL << (l)) + 1) & (~0UL >> (BITS_PER_LONG - 1 - (h))))
 
 /* prepare bit mask  */
-#define BIT(n)  (1 << (n))
+#define BIT(n)  (1U << (n))
 
 /* calculate number of array elements */
 #define ARRAY_SIZE(array) (sizeof(array) / sizeof((array)[0]))

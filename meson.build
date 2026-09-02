@@ -46,14 +46,20 @@ executable('svf', ['svf/main.c', 'svf/ast-jtag.c', 'svf/svf.c'], install: true)
 # otp
 platform = get_option('otp-platform')
 if platform == 'ast2700'
-  otp_src = ['otp/otp_ast2700.c', 'otp/lib_otp_ast2700.c', 'otp/otp_prov.c']
+  executable('otp', ['otp/otp_ast2700.c', 'otp/lib_otp_ast2700.c', 'otp/otp_prov.c'],
+      install: true, dependencies: dependency('openssl'),
+      include_directories: include_directories('otp'))
+elif platform == 'ast2705'
+  executable('otp-ast2705', 'otp/otp_ast2705.c',
+      install: true,
+      include_directories: include_directories('otp'))
 elif platform == 'ast2600'
-  otp_src = 'otp/otp_ast2600.c'
+  executable('otp', 'otp/otp_ast2600.c',
+      install: true, dependencies: dependency('openssl'),
+      include_directories: include_directories('otp'))
 else
   error('Invalid otp-platform: ' + platform)
 endif
-executable('otp', otp_src, install: true, dependencies: dependency('openssl'),
-    include_directories: include_directories('otp'))
 
 # usb
 executable('hid_gadget_app', 'usb/hid_gadget_test.c', install: true)

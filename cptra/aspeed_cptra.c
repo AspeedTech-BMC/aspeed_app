@@ -27,7 +27,10 @@
 #include "ca_cert.h"
 
 static int verbose;
+static int quiet;
 #define dbg_printf(fmt, args...)	do { if (verbose) printf(fmt, ##args); } while (0)
+/* Non-failure output; suppressed under -q so only FAIL/failed lines remain. */
+#define info_printf(fmt, args...)	do { if (!quiet) printf(fmt, ##args); } while (0)
 
 #define BIT(n)		(1U << (n))
 
@@ -266,27 +269,27 @@ static void hexdump(const void *data, size_t size, const char *title)
 	const unsigned char *p = (const unsigned char *)data;
 
 	if (title)
-		printf("%s\n", title);
+		info_printf("%s\n", title);
 
 	for (size_t i = 0; i < size; i++) {
 		if (i % 16 == 0)
-			printf("%08zx  ", i); // offset
-		printf("%02x ", p[i]); // hex value
+			info_printf("%08zx  ", i); // offset
+		info_printf("%02x ", p[i]); // hex value
 
 		if (i % 16 == 15 || i == size - 1) {
 			// print ASCII
 			int pad = 16 - (i % 16 + 1);
 
 			for (int j = 0; j < pad; j++)
-				printf("   ");
-			printf(" |");
+				info_printf("   ");
+			info_printf(" |");
 
 			for (size_t j = i - (i % 16); j <= i; j++) {
-				printf("%c", (p[j] >= 32 && p[j] <= 126) ?
+				info_printf("%c", (p[j] >= 32 && p[j] <= 126) ?
 						     p[j] :
 						     '.');
 			}
-			printf("|\n");
+			info_printf("|\n");
 		}
 	}
 }
@@ -376,7 +379,7 @@ static int cptra_test_invoke_dpe_command_get_profile(void)
 	struct dpe_get_profile_o *get_profile_output = NULL;
 	int ret;
 
-	printf("\tTest GetProfile...\n");
+	info_printf("\tTest GetProfile...\n");
 
 	memset(&input, 0, sizeof(struct cptra_invoke_dpe_command_ia));
 	memset(&output, 0, sizeof(struct cptra_invoke_dpe_command_oa));
@@ -401,14 +404,14 @@ static int cptra_test_invoke_dpe_command_get_profile(void)
 
 	} else {
 		dbg_printf("Success\n");
-		printf("DPE Profile: %08x\n", get_profile_output->rsp_hdr.profile);
-		printf("Major Version: %04x Minor Version: %04x\n",
+		info_printf("DPE Profile: %08x\n", get_profile_output->rsp_hdr.profile);
+		info_printf("Major Version: %04x Minor Version: %04x\n",
 		       get_profile_output->major_version,
 		       get_profile_output->minor_version);
-		printf("Vendor ID: %08x Sku ID: %08x\n",
+		info_printf("Vendor ID: %08x Sku ID: %08x\n",
 		       get_profile_output->vendor_id,
 		       get_profile_output->vendor_sku);
-		printf("Max TCI Nodes: %d Flags: %08x\n",
+		info_printf("Max TCI Nodes: %d Flags: %08x\n",
 		       get_profile_output->max_tci_nodes,
 		       get_profile_output->flags);
 	}
@@ -428,7 +431,7 @@ static int cptra_test_invoke_dpe_command_initialize_context(uint8_t *context_han
 	struct dpe_new_context_o *initialize_context_output = NULL;
 	int ret;
 
-	printf("\tTest InitializeContext...\n");
+	info_printf("\tTest InitializeContext...\n");
 
 	memset(&input, 0, sizeof(struct cptra_invoke_dpe_command_ia));
 	memset(&output, 0, sizeof(struct cptra_invoke_dpe_command_oa));
@@ -480,7 +483,7 @@ cptra_test_invoke_dpe_command_derive_context(uint8_t *input_context, uint8_t *de
 	struct dpe_derive_context_o *derive_context_output = NULL;
 	int ret;
 
-	printf("\tTest DeriveContext...\n");
+	info_printf("\tTest DeriveContext...\n");
 
 	memset(&input, 0, sizeof(struct cptra_invoke_dpe_command_ia));
 	memset(&output, 0, sizeof(struct cptra_invoke_dpe_command_oa));
@@ -535,7 +538,7 @@ int cptra_test_invoke_dpe_command_derive_context_exported_cdi(uint8_t *derived_c
 	struct dpe_derive_context_exported_cdi_o *derive_context_output = NULL;
 	int ret;
 
-	printf("\tTest DeriveContext...\n");
+	info_printf("\tTest DeriveContext...\n");
 
 	memset(&input, 0, sizeof(struct cptra_invoke_dpe_command_ia));
 	memset(&output, 0, sizeof(struct cptra_invoke_dpe_command_oa));
@@ -595,7 +598,7 @@ static int cptra_test_invoke_dpe_command_rotate_context(uint8_t *context_handle,
 	struct dpe_new_context_o *rotate_context_handle_output = NULL;
 	int ret;
 
-	printf("\tTest RotateContextHandle...\n");
+	info_printf("\tTest RotateContextHandle...\n");
 	dbg_hexdump(context_handle, 16, "context_handle:");
 
 	memset(&input, 0, sizeof(struct cptra_invoke_dpe_command_ia));
@@ -648,7 +651,7 @@ static int cptra_test_invoke_dpe_command_destroy_context(uint8_t *context_handle
 	struct dpe_destroy_context_o *destroy_context_output = NULL;
 	int ret;
 
-	printf("\tTest DestroyContext...\n");
+	info_printf("\tTest DestroyContext...\n");
 	dbg_hexdump(context_handle, 16, "context_handle:");
 
 	memset(&input, 0, sizeof(struct cptra_invoke_dpe_command_ia));
@@ -697,7 +700,7 @@ static int cptra_test_invoke_dpe_command_certify_key(uint8_t *context_handle,
 	struct dpe_certify_key_o *certify_key_output = NULL;
 	int ret;
 
-	printf("\tTest CertifyKey... %s\n", format ? "CSR" : "Certificate");
+	info_printf("\tTest CertifyKey... %s\n", format ? "CSR" : "Certificate");
 	dbg_hexdump(context_handle, 16, "context_handle:");
 
 	memset(&input, 0, sizeof(struct cptra_invoke_dpe_command_ia));
@@ -724,7 +727,7 @@ static int cptra_test_invoke_dpe_command_certify_key(uint8_t *context_handle,
 		ret = -1;
 
 	} else {
-		printf("DPE command CERTIFY_KEY Success\n");
+		info_printf("DPE command CERTIFY_KEY Success\n");
 		dbg_hexdump(certify_key_output->context_handle,
 			    sizeof(certify_key_output->context_handle),
 			    "context_handle:");
@@ -761,7 +764,7 @@ static int cptra_test_invoke_dpe_command_sign(uint8_t *context_handle, uint8_t *
 	struct dpe_sign_o *sign_output = NULL;
 	int ret;
 
-	printf("\tTest Sign...\n");
+	info_printf("\tTest Sign...\n");
 	dbg_hexdump(public_key, 97, "public_key:");
 	dbg_hexdump(context_handle, 16, "context_handle:");
 
@@ -818,7 +821,7 @@ static int cptra_test_invoke_dpe_command_get_certificate_chain(bool debug)
 	uint32_t offset = 0;
 	int ret;
 
-	printf("\tTest GetCertificateChain...\n");
+	info_printf("\tTest GetCertificateChain...\n");
 
 	memset(&input, 0, sizeof(struct cptra_invoke_dpe_command_ia));
 	memset(&output, 0, sizeof(struct cptra_invoke_dpe_command_oa));
@@ -849,7 +852,7 @@ static int cptra_test_invoke_dpe_command_get_certificate_chain(bool debug)
 			goto end;
 
 		} else {
-			printf("Successful offset=%u size=%u\n", offset,
+			info_printf("Successful offset=%u size=%u\n", offset,
 			       get_certificate_chain_output->size);
 
 			memcpy(&certificate_chain[offset],
@@ -884,7 +887,7 @@ static int cptra_test_invoke_dpe_command(void)
 {
 	int ret;
 
-	printf("Test caliptra_invoke_dpe_command...\n");
+	info_printf("Test caliptra_invoke_dpe_command...\n");
 
 	uint8_t derived_context[32] = {0};
 	uint8_t rotated_context[16] = {0};
@@ -942,7 +945,7 @@ __attribute__((__unused__)) static int cptra_test_shutdown(void)
 	uint32_t data[2];
 	int ret;
 
-	printf("%s: Start...\n", __func__);
+	info_printf("%s: Start...\n", __func__);
 
 	/* Prepare tx data to bootmcu */
 	data[0] = (uint32_t)(uintptr_t)p8_bmcu_in;
@@ -978,7 +981,10 @@ __attribute__((__unused__)) static int cptra_test_shutdown(void)
 		   output.fips_status);
 
 end:
-	printf("%s: %s\n", __func__, ret ? "Failed" : "Pass");
+	if (ret)
+		printf("%s: Failed\n", __func__);
+	else
+		info_printf("%s: Pass\n", __func__);
 	return ret;
 }
 
@@ -992,7 +998,7 @@ static int cptra_test_version(void)
 	uint32_t data[2];
 	int ret;
 
-	printf("%s: Start...\n", __func__);
+	info_printf("%s: Start...\n", __func__);
 
 	/* Prepare tx data to bootmcu */
 	data[0] = (uint32_t)(uintptr_t)p8_bmcu_in;
@@ -1032,7 +1038,10 @@ static int cptra_test_version(void)
 	dbg_hexdump(output.name, sizeof(output.name), "name:");
 
 end:
-	printf("%s: %s\n", __func__, ret ? "Failed" : "Pass");
+	if (ret)
+		printf("%s: Failed\n", __func__);
+	else
+		info_printf("%s: Pass\n", __func__);
 	return ret;
 }
 
@@ -1046,7 +1055,7 @@ static int cptra_test_capabilities(void)
 	uint32_t data[2];
 	int ret;
 
-	printf("%s: Start...\n", __func__);
+	info_printf("%s: Start...\n", __func__);
 
 	/* Prepare tx data to bootmcu */
 	data[0] = (uint32_t)(uintptr_t)p8_bmcu_in;
@@ -1084,7 +1093,10 @@ static int cptra_test_capabilities(void)
 	dbg_hexdump(output.capabilities, sizeof(output.capabilities), "capabilities:");
 
 end:
-	printf("%s: %s\n", __func__, ret ? "Failed" : "Pass");
+	if (ret)
+		printf("%s: Failed\n", __func__);
+	else
+		info_printf("%s: Pass\n", __func__);
 	return ret;
 }
 
@@ -1098,7 +1110,7 @@ static int cptra_test_fw_info(void)
 	uint32_t data[2];
 	int ret;
 
-	printf("%s: Start...\n", __func__);
+	info_printf("%s: Start...\n", __func__);
 
 	/* Prepare tx data to bootmcu */
 	data[0] = (uint32_t)(uintptr_t)p8_bmcu_in;
@@ -1148,7 +1160,10 @@ static int cptra_test_fw_info(void)
 		    "runtime_sha384_digest:");
 
 end:
-	printf("%s: %s\n", __func__, ret ? "Failed" : "Pass");
+	if (ret)
+		printf("%s: Failed\n", __func__);
+	else
+		info_printf("%s: Pass\n", __func__);
 	return ret;
 }
 
@@ -1162,7 +1177,7 @@ static int cptra_test_get_rt_alias_cert(void)
 	uint32_t data[2];
 	int ret;
 
-	printf("%s: Start...\n", __func__);
+	info_printf("%s: Start...\n", __func__);
 
 	/* Prepare tx data to bootmcu */
 	data[0] = (uint32_t)(uintptr_t)p8_bmcu_in;
@@ -1200,7 +1215,10 @@ static int cptra_test_get_rt_alias_cert(void)
 	dbg_hexdump(output.data, output.data_size, "rt_alias_cert:");
 
 end:
-	printf("%s: %s\n", __func__, ret ? "Failed" : "Pass");
+	if (ret)
+		printf("%s: Failed\n", __func__);
+	else
+		info_printf("%s: Pass\n", __func__);
 	return ret;
 }
 
@@ -1214,7 +1232,7 @@ static int cptra_test_get_fmc_alias_cert(void)
 	uint32_t data[2];
 	int ret;
 
-	printf("%s: Start...\n", __func__);
+	info_printf("%s: Start...\n", __func__);
 
 	/* Prepare tx data to bootmcu */
 	data[0] = (uint32_t)(uintptr_t)p8_bmcu_in;
@@ -1252,7 +1270,10 @@ static int cptra_test_get_fmc_alias_cert(void)
 	dbg_hexdump(output.data, output.data_size, "fmc_alias_cert:");
 
 end:
-	printf("%s: %s\n", __func__, ret ? "Failed" : "Pass");
+	if (ret)
+		printf("%s: Failed\n", __func__);
+	else
+		info_printf("%s: Pass\n", __func__);
 	return ret;
 }
 
@@ -1266,7 +1287,7 @@ static int cptra_test_get_ldev_cert(void)
 	uint32_t data[2];
 	int ret;
 
-	printf("%s: Start...\n", __func__);
+	info_printf("%s: Start...\n", __func__);
 
 	/* Prepare tx data to bootmcu */
 	data[0] = (uint32_t)(uintptr_t)p8_bmcu_in;
@@ -1304,7 +1325,10 @@ static int cptra_test_get_ldev_cert(void)
 	dbg_hexdump(output.data, output.data_size, "ldev_cert:");
 
 end:
-	printf("%s: %s\n", __func__, ret ? "Failed" : "Pass");
+	if (ret)
+		printf("%s: Failed\n", __func__);
+	else
+		info_printf("%s: Pass\n", __func__);
 	return ret;
 }
 
@@ -1318,7 +1342,7 @@ static int cptra_test_get_idev_info(void)
 	uint32_t data[2];
 	int ret;
 
-	printf("%s: Start...\n", __func__);
+	info_printf("%s: Start...\n", __func__);
 
 	/* Prepare tx data to bootmcu */
 	data[0] = (uint32_t)(uintptr_t)p8_bmcu_in;
@@ -1357,7 +1381,10 @@ static int cptra_test_get_idev_info(void)
 	dbg_hexdump(output.idev_pub_y, sizeof(output.idev_pub_y), "idev_pub_y:");
 
 end:
-	printf("%s: %s\n", __func__, ret ? "Failed" : "Pass");
+	if (ret)
+		printf("%s: Failed\n", __func__);
+	else
+		info_printf("%s: Pass\n", __func__);
 	return ret;
 }
 
@@ -1371,7 +1398,7 @@ __attribute__((__unused__)) static int cptra_test_populate_idev_cert(void)
 	uint32_t data[2];
 	int ret;
 
-	printf("%s: Start...\n", __func__);
+	info_printf("%s: Start...\n", __func__);
 
 	/* Prepare tx data to bootmcu */
 	data[0] = (uint32_t)(uintptr_t)p8_bmcu_in;
@@ -1407,7 +1434,10 @@ __attribute__((__unused__)) static int cptra_test_populate_idev_cert(void)
 		   output.fips_status);
 
 end:
-	printf("%s: %s\n", __func__, ret ? "Failed" : "Pass");
+	if (ret)
+		printf("%s: Failed\n", __func__);
+	else
+		info_printf("%s: Pass\n", __func__);
 	return ret;
 }
 
@@ -1421,7 +1451,7 @@ __attribute__((__unused__)) static int cptra_test_get_idev_cert(void)
 	uint32_t data[2];
 	int ret;
 
-	printf("%s: Start...\n", __func__);
+	info_printf("%s: Start...\n", __func__);
 
 	/* Prepare tx data to bootmcu */
 	data[0] = (uint32_t)(uintptr_t)p8_bmcu_in;
@@ -1459,7 +1489,10 @@ __attribute__((__unused__)) static int cptra_test_get_idev_cert(void)
 	dbg_hexdump(output.cert, output.cert_size, "cert:");
 
 end:
-	printf("%s: %s\n", __func__, ret ? "Failed" : "Pass");
+	if (ret)
+		printf("%s: Failed\n", __func__);
+	else
+		info_printf("%s: Pass\n", __func__);
 	return ret;
 }
 
@@ -1473,7 +1506,7 @@ static int cptra_test_disable_attestation(void)
 	uint32_t data[2];
 	int ret;
 
-	printf("%s: Start...\n", __func__);
+	info_printf("%s: Start...\n", __func__);
 
 	/* Prepare tx data to bootmcu */
 	data[0] = (uint32_t)(uintptr_t)p8_bmcu_in;
@@ -1509,7 +1542,10 @@ static int cptra_test_disable_attestation(void)
 		   output.fips_status);
 
 end:
-	printf("%s: %s\n", __func__, ret ? "Failed" : "Pass");
+	if (ret)
+		printf("%s: Failed\n", __func__);
+	else
+		info_printf("%s: Pass\n", __func__);
 	return ret;
 }
 
@@ -1523,7 +1559,7 @@ static int cptra_test_certify_key_extended(void)
 	uint32_t data[2];
 	int ret;
 
-	printf("%s: Start...\n", __func__);
+	info_printf("%s: Start...\n", __func__);
 
 	/* Prepare tx data to bootmcu */
 	data[0] = (uint32_t)(uintptr_t)p8_bmcu_in;
@@ -1559,7 +1595,10 @@ static int cptra_test_certify_key_extended(void)
 		   output.fips_status);
 
 end:
-	printf("%s: %s\n", __func__, ret ? "Failed" : "Pass");
+	if (ret)
+		printf("%s: Failed\n", __func__);
+	else
+		info_printf("%s: Pass\n", __func__);
 	return ret;
 }
 
@@ -1573,7 +1612,7 @@ static int cptra_test_add_subject_alt_name(void)
 	uint32_t data[2];
 	int ret;
 
-	printf("%s: Start...\n", __func__);
+	info_printf("%s: Start...\n", __func__);
 
 	/* Prepare tx data to bootmcu */
 	data[0] = (uint32_t)(uintptr_t)p8_bmcu_in;
@@ -1613,7 +1652,10 @@ static int cptra_test_add_subject_alt_name(void)
 		   output.fips_status);
 
 end:
-	printf("%s: %s\n", __func__, ret ? "Failed" : "Pass");
+	if (ret)
+		printf("%s: Failed\n", __func__);
+	else
+		info_printf("%s: Pass\n", __func__);
 	return ret;
 }
 
@@ -1627,7 +1669,7 @@ static int cptra_test_dpe_get_tagged_tci(void)
 	uint32_t data[2];
 	int ret;
 
-	printf("%s: Start...\n", __func__);
+	info_printf("%s: Start...\n", __func__);
 
 	/* Prepare tx data to bootmcu */
 	data[0] = (uint32_t)(uintptr_t)p8_bmcu_in;
@@ -1666,7 +1708,10 @@ static int cptra_test_dpe_get_tagged_tci(void)
 	dbg_hexdump(output.tci_current, sizeof(output.tci_current), "tci_current:");
 
 end:
-	printf("%s: %s\n", __func__, ret ? "Failed" : "Pass");
+	if (ret)
+		printf("%s: Failed\n", __func__);
+	else
+		info_printf("%s: Pass\n", __func__);
 	return ret;
 }
 
@@ -1680,7 +1725,7 @@ static int cptra_test_dpe_tag_tci(void)
 	uint32_t data[2];
 	int ret;
 
-	printf("%s: Start...\n", __func__);
+	info_printf("%s: Start...\n", __func__);
 
 	/* Prepare tx data to bootmcu */
 	data[0] = (uint32_t)(uintptr_t)p8_bmcu_in;
@@ -1716,7 +1761,10 @@ static int cptra_test_dpe_tag_tci(void)
 		   output.fips_status);
 
 end:
-	printf("%s: %s\n", __func__, ret ? "Failed" : "Pass");
+	if (ret)
+		printf("%s: Failed\n", __func__);
+	else
+		info_printf("%s: Pass\n", __func__);
 	return ret;
 }
 
@@ -1730,7 +1778,7 @@ static int cptra_test_increment_pcr_reset_counter(void)
 	uint32_t data[2];
 	int ret;
 
-	printf("%s: Start...\n", __func__);
+	info_printf("%s: Start...\n", __func__);
 
 	/* Prepare tx data to bootmcu */
 	data[0] = (uint32_t)(uintptr_t)p8_bmcu_in;
@@ -1767,7 +1815,10 @@ static int cptra_test_increment_pcr_reset_counter(void)
 		   output.fips_status);
 
 end:
-	printf("%s: %s\n", __func__, ret ? "Failed" : "Pass");
+	if (ret)
+		printf("%s: Failed\n", __func__);
+	else
+		info_printf("%s: Pass\n", __func__);
 	return ret;
 }
 
@@ -1781,7 +1832,7 @@ static int cptra_test_extend_pcr(void)
 	uint32_t data[2];
 	int ret;
 
-	printf("%s: Start...\n", __func__);
+	info_printf("%s: Start...\n", __func__);
 
 	/* Prepare tx data to bootmcu */
 	data[0] = (uint32_t)(uintptr_t)p8_bmcu_in;
@@ -1820,7 +1871,10 @@ static int cptra_test_extend_pcr(void)
 		   output.fips_status);
 
 end:
-	printf("%s: %s\n", __func__, ret ? "Failed" : "Pass");
+	if (ret)
+		printf("%s: Failed\n", __func__);
+	else
+		info_printf("%s: Pass\n", __func__);
 	return ret;
 }
 
@@ -1834,7 +1888,7 @@ static int cptra_test_quote_pcrs(void)
 	uint32_t data[2];
 	int ret;
 
-	printf("%s: Start...\n", __func__);
+	info_printf("%s: Start...\n", __func__);
 
 	/* Prepare tx data to bootmcu */
 	data[0] = (uint32_t)(uintptr_t)p8_bmcu_in;
@@ -1876,7 +1930,10 @@ static int cptra_test_quote_pcrs(void)
 	dbg_hexdump(output.signature_s, sizeof(output.signature_s), "signature_s:");
 
 end:
-	printf("%s: %s\n", __func__, ret ? "Failed" : "Pass");
+	if (ret)
+		printf("%s: Failed\n", __func__);
+	else
+		info_printf("%s: Pass\n", __func__);
 	return ret;
 }
 
@@ -1890,7 +1947,7 @@ static int cptra_test_stash_measurement(void)
 	uint32_t data[2];
 	int ret;
 
-	printf("%s: Start...\n", __func__);
+	info_printf("%s: Start...\n", __func__);
 
 	/* Prepare tx data to bootmcu */
 	data[0] = (uint32_t)(uintptr_t)p8_bmcu_in;
@@ -1927,7 +1984,10 @@ static int cptra_test_stash_measurement(void)
 		   output.chksum, output.fips_status, output.dpe_result);
 
 end:
-	printf("%s: %s\n", __func__, ret ? "Failed" : "Pass");
+	if (ret)
+		printf("%s: Failed\n", __func__);
+	else
+		info_printf("%s: Pass\n", __func__);
 	return ret;
 }
 
@@ -2120,7 +2180,7 @@ static int cptra_test_ecdsa_verify(void)
 	uint32_t data[2];
 	int ret;
 
-	printf("%s: Start...\n", __func__);
+	info_printf("%s: Start...\n", __func__);
 	for (int i = 0; i < tv_size; i++) {
 		dbg_printf("Test vector %d\n", i);
 
@@ -2193,7 +2253,7 @@ static int cptra_test_ecdsa_verify(void)
 		ret = 0;
 	}
 
-	printf("%s: Pass\n", __func__);
+	info_printf("%s: Pass\n", __func__);
 
 end:
 	return ret;
@@ -2212,7 +2272,7 @@ static int cptra_test_lms_verify(void)
 	uint32_t data[2];
 	int ret;
 
-	printf("%s: Start...\n", __func__);
+	info_printf("%s: Start...\n", __func__);
 	for (int i = 0; i < tv_size; i++) {
 		dbg_printf("Test vector %d\n", i);
 
@@ -2281,7 +2341,7 @@ static int cptra_test_lms_verify(void)
 		}
 	}
 
-	printf("%s: Pass\n", __func__);
+	info_printf("%s: Pass\n", __func__);
 
 end:
 	return ret;
@@ -2293,7 +2353,7 @@ static int cptra_test_sha384(void)
 	int tv_size = ARRAY_SIZE(sha384_tv_template);
 	uint8_t digest[64];
 
-	printf("%s: Start...\n", __func__);
+	info_printf("%s: Start...\n", __func__);
 	for (int i = 0; i < tv_size; i++) {
 		dbg_printf("Test vector %d\n", i);
 
@@ -2306,7 +2366,7 @@ static int cptra_test_sha384(void)
 		}
 	}
 
-	printf("%s: Pass\n", __func__);
+	info_printf("%s: Pass\n", __func__);
 
 	return 0;
 }
@@ -2319,7 +2379,7 @@ static int cptra_test_sha384_acc(void)
 	uint8_t *p8;
 	int tsize, bsize;
 
-	printf("%s: Start...\n", __func__);
+	info_printf("%s: Start...\n", __func__);
 	for (int i = 0; i < tv_size; i++) {
 		dbg_printf("Test vector %d\n", i);
 
@@ -2346,7 +2406,7 @@ static int cptra_test_sha384_acc(void)
 		}
 	}
 
-	printf("%s: Pass\n", __func__);
+	info_printf("%s: Pass\n", __func__);
 
 	return 0;
 }
@@ -2398,7 +2458,7 @@ static int cptra_test_caliptra_fw_load(void)
 	int ret, fd;
 	ssize_t r;
 
-	printf("%s: Start...\n", __func__);
+	info_printf("%s: Start...\n", __func__);
 
 	/* Prepare tx data to bootmcu */
 	data[0] = (uintptr_t)p8_bmcu_in;
@@ -2463,7 +2523,10 @@ end:
 	if (fd >= 0)
 		close(fd);
 
-	printf("%s: %s\n", __func__, ret ? "Failed" : "Pass");
+	if (ret)
+		printf("%s: Failed\n", __func__);
+	else
+		info_printf("%s: Pass\n", __func__);
 	return ret;
 }
 
@@ -2581,7 +2644,7 @@ static int cptra_test_idevid_cert(void)
 	dump_certificate_der(aspeed_root_ca_cert_der, ARRAY_SIZE(aspeed_root_ca_cert_der));
 
 	/* Parse and verify both Sub CA certs against Root CA */
-	printf("Verifying Sub CA certificates...\n");
+	info_printf("Verifying Sub CA certificates...\n");
 	mbedtls_x509_crt_init(&root_ca_cert);
 	mbedtls_x509_crt_init(&sub_ca_ecdsa0);
 	mbedtls_x509_crt_init(&sub_ca_ecdsa1);
@@ -2620,7 +2683,7 @@ static int cptra_test_idevid_cert(void)
 		printf("Sub CA ECDSA0 verification error: %s\n", err);
 		goto cleanup_sub;
 	}
-	printf("Sub CA ECDSA0 verified by ASPEED Root CA successfully !!!\n");
+	info_printf("Sub CA ECDSA0 verified by ASPEED Root CA successfully !!!\n");
 
 	ret = mbedtls_x509_crt_parse_der(&sub_ca_ecdsa1, sub_ca_ecdsa1_cert_der,
 					 ARRAY_SIZE(sub_ca_ecdsa1_cert_der));
@@ -2644,7 +2707,7 @@ static int cptra_test_idevid_cert(void)
 		printf("Sub CA ECDSA1 verification error: %s\n", err);
 		goto cleanup_sub;
 	}
-	printf("Sub CA ECDSA1 verified by ASPEED Root CA successfully !!!\n");
+	info_printf("Sub CA ECDSA1 verified by ASPEED Root CA successfully !!!\n");
 
 	/* Reverse Cert Chain */
 	dbg_printf("Reversing Cert Chain...\n");
@@ -2700,7 +2763,7 @@ static int cptra_test_idevid_cert(void)
 	 */
 	sub_ca_ecdsa0.next = &sub_ca_ecdsa1;
 
-	printf("Verifying certificate chain...\n");
+	info_printf("Verifying certificate chain...\n");
 	ret = mbedtls_x509_crt_verify(&cert_chain, &sub_ca_ecdsa0, NULL, NULL, &flags,
 				      ast_cert_verify_callback, &ctx);
 	sub_ca_ecdsa0.next = NULL;
@@ -2736,9 +2799,9 @@ static int cptra_test_idevid_cert(void)
 		if (idevid->issuer_raw.len == sub_ca_ecdsa0.subject_raw.len &&
 		    memcmp(idevid->issuer_raw.p, sub_ca_ecdsa0.subject_raw.p,
 			   idevid->issuer_raw.len) == 0)
-			printf("Certificate chain verified by Sub CA ECDSA0 successfully !!!\n");
+			info_printf("Certificate chain verified by Sub CA ECDSA0 successfully !!!\n");
 		else
-			printf("Certificate chain verified by Sub CA ECDSA1 successfully !!!\n");
+			info_printf("Certificate chain verified by Sub CA ECDSA1 successfully !!!\n");
 	}
 
 cleanup_cert:
@@ -2758,7 +2821,7 @@ static int cptra_test_cert_chain_wrapper(void)
 
 	ret = cptra_test_idevid_cert();
 	if (!ret) {
-		printf("\n"
+		info_printf("\n"
 			"______________________________________________\n"
 			"___  __ \\__    |_  ___/_  ___/__  ____/__  __ \\\n"
 			"__  /_/ /_  /| |____ \\_____ \\__  __/  __  / / /\n"
@@ -2788,7 +2851,7 @@ int cptra_test_get_fmc_alias_csr(void)
 	uint32_t data[2];
 	int ret;
 
-	printf("%s: Start...\n", __func__);
+	info_printf("%s: Start...\n", __func__);
 
 	data[0] = (uint32_t)(uintptr_t)p8_bmcu_in;
 	data[1] = (uint32_t)(uintptr_t)p8_bmcu_out;
@@ -2815,12 +2878,15 @@ int cptra_test_get_fmc_alias_csr(void)
 	}
 
 	dbg_printf("output: chksum=0x%x, fips_status=0x%x\n", output.chksum, output.fips_status);
-	printf("FMC Alias CSR size: %u bytes\n", output.data_size);
+	info_printf("FMC Alias CSR size: %u bytes\n", output.data_size);
 	if (output.data_size && output.data_size <= sizeof(output.data))
 		hexdump(output.data, output.data_size, "FMC Alias CSR:");
 
 end:
-	printf("%s: %s\n", __func__, ret ? "Failed" : "Pass");
+	if (ret)
+		printf("%s: Failed\n", __func__);
+	else
+		info_printf("%s: Pass\n", __func__);
 	return ret;
 }
 
@@ -2834,7 +2900,7 @@ static int cptra_test_fips_self_test_start(void)
 	uint32_t data[2];
 	int ret;
 
-	printf("%s: Start...\n", __func__);
+	info_printf("%s: Start...\n", __func__);
 
 	data[0] = (uint32_t)(uintptr_t)p8_bmcu_in;
 	data[1] = (uint32_t)(uintptr_t)p8_bmcu_out;
@@ -2863,7 +2929,10 @@ static int cptra_test_fips_self_test_start(void)
 	dbg_printf("output: chksum=0x%x, fips_status=0x%x\n", output.chksum, output.fips_status);
 
 end:
-	printf("%s: %s\n", __func__, ret ? "Failed" : "Pass");
+	if (ret)
+		printf("%s: Failed\n", __func__);
+	else
+		info_printf("%s: Pass\n", __func__);
 	return ret;
 }
 
@@ -2877,7 +2946,7 @@ static int cptra_test_fips_self_test_get_results(void)
 	uint32_t data[2];
 	int ret;
 
-	printf("%s: Start...\n", __func__);
+	info_printf("%s: Start...\n", __func__);
 
 	data[0] = (uint32_t)(uintptr_t)p8_bmcu_in;
 	data[1] = (uint32_t)(uintptr_t)p8_bmcu_out;
@@ -2906,7 +2975,10 @@ static int cptra_test_fips_self_test_get_results(void)
 	dbg_printf("output: chksum=0x%x, fips_status=0x%x\n", output.chksum, output.fips_status);
 
 end:
-	printf("%s: %s\n", __func__, ret ? "Failed" : "Pass");
+	if (ret)
+		printf("%s: Failed\n", __func__);
+	else
+		info_printf("%s: Pass\n", __func__);
 	return ret;
 }
 
@@ -2967,11 +3039,11 @@ static void pcr_log_print_pcr_ids(uint32_t pcr_ids)
 		{ 31, "StashMeasurement" },
 	};
 
-	printf("  pcr_ids: 0x%08x [", pcr_ids);
+	info_printf("  pcr_ids: 0x%08x [", pcr_ids);
 
 	for (size_t i = 0; i < ARRAY_SIZE(named); i++) {
 		if (pcr_ids & BIT(named[i].bit)) {
-			printf("%s%s", first ? "" : ", ", named[i].name);
+			info_printf("%s%s", first ? "" : ", ", named[i].name);
 			first = false;
 		}
 	}
@@ -2988,11 +3060,11 @@ static void pcr_log_print_pcr_ids(uint32_t pcr_ids)
 			}
 		}
 		if (!is_named) {
-			printf("%sPcr%d", first ? "" : ", ", b);
+			info_printf("%sPcr%d", first ? "" : ", ", b);
 			first = false;
 		}
 	}
-	printf("]\n");
+	info_printf("]\n");
 }
 
 static void pcr_log_parse(const uint8_t *data, uint32_t data_size)
@@ -3009,7 +3081,7 @@ static void pcr_log_parse(const uint8_t *data, uint32_t data_size)
 			(const struct pcr_log_entry *)(data + offset);
 		size_t dsize = pcr_log_entry_data_size(e->id);
 
-		printf("[%d] id=%u (%s)\n", idx, e->id, pcr_log_entry_id_name(e->id));
+		info_printf("[%d] id=%u (%s)\n", idx, e->id, pcr_log_entry_id_name(e->id));
 		pcr_log_print_pcr_ids(e->pcr_ids);
 		if (dsize > 0)
 			hexdump((const uint8_t *)e->pcr_data, dsize, "  data:");
@@ -3029,7 +3101,7 @@ static int cptra_test_get_pcr_log(void)
 	uint32_t data[2];
 	int ret;
 
-	printf("%s: Start...\n", __func__);
+	info_printf("%s: Start...\n", __func__);
 
 	data[0] = (uint32_t)(uintptr_t)p8_bmcu_in;
 	data[1] = (uint32_t)(uintptr_t)p8_bmcu_out;
@@ -3057,14 +3129,17 @@ static int cptra_test_get_pcr_log(void)
 
 	dbg_printf("output: chksum=0x%x, fips_status=0x%x\n", output.chksum, output.fips_status);
 
-	printf("PCR log: %u bytes (%u entries)\n",
+	info_printf("PCR log: %u bytes (%u entries)\n",
 	       output.data_size, output.data_size / PCR_LOG_ENTRY_SIZE);
 
 	if (output.data_size && output.data_size <= sizeof(output.data))
 		pcr_log_parse(output.data, output.data_size);
 
 end:
-	printf("%s: %s\n", __func__, ret ? "Failed" : "Pass");
+	if (ret)
+		printf("%s: Failed\n", __func__);
+	else
+		info_printf("%s: Pass\n", __func__);
 	return ret;
 }
 
@@ -3078,7 +3153,7 @@ static int cptra_test_reallocate_dpe_context_limits(void)
 	uint32_t data[2];
 	int ret;
 
-	printf("%s: Start...\n", __func__);
+	info_printf("%s: Start...\n", __func__);
 
 	data[0] = (uint32_t)(uintptr_t)p8_bmcu_in;
 	data[1] = (uint32_t)(uintptr_t)p8_bmcu_out;
@@ -3107,11 +3182,14 @@ static int cptra_test_reallocate_dpe_context_limits(void)
 	}
 
 	dbg_printf("output: chksum=0x%x, fips_status=0x%x\n", output.chksum, output.fips_status);
-	printf("New PL0 context limit: %u, PL1 context limit: %u\n",
+	info_printf("New PL0 context limit: %u, PL1 context limit: %u\n",
 	       output.new_pl0_context_limit, output.new_pl1_context_limit);
 
 end:
-	printf("%s: %s\n", __func__, ret ? "Failed" : "Pass");
+	if (ret)
+		printf("%s: Failed\n", __func__);
+	else
+		info_printf("%s: Pass\n", __func__);
 	return ret;
 }
 
@@ -3174,7 +3252,7 @@ static void set_file_descriptor_limit(void)
 	limit.rlim_max = 4096;
 
 	if (setrlimit(RLIMIT_NOFILE, &limit) == 0)
-		printf("File descriptor limit set to 4096\n");
+		info_printf("File descriptor limit set to 4096\n");
 	else
 		perror("Failed to set file descriptor limit");
 }
@@ -3193,9 +3271,9 @@ static int stress_cptra(int fd)
 		return -1;
 	}
 
-	printf("Starting stress test with %d iterations...\n", iterations);
+	info_printf("Starting stress test with %d iterations...\n", iterations);
 	for (int i = 0; i < iterations; i++) {
-		printf("Iteration %d/%d\n", i + 1, iterations);
+		info_printf("Iteration %d/%d\n", i + 1, iterations);
 		for (int j = 0; j < cptra_tests_count; j++) {
 			if (strcmp(cptra_tests[j].name, "dpe_tag_tci") == 0 ||
 			    strcmp(cptra_tests[j].name, "dpe_get_tagged_tci") == 0 ||
@@ -3213,7 +3291,7 @@ static int stress_cptra(int fd)
 			if (i >= 1 && (strcmp(cptra_tests[j].name, "stash_measurement") == 0))
 				continue;
 
-			printf(" Running test: %s\n", cptra_tests[j].name);
+			info_printf(" Running test: %s\n", cptra_tests[j].name);
 			ret = cptra_tests[j].func();
 			if (ret) {
 				printf("  Test %s failed: %d\n", cptra_tests[j].name, ret);
@@ -3222,7 +3300,7 @@ static int stress_cptra(int fd)
 		}
 	}
 
-	printf("Stress test completed successfully.\n");
+	info_printf("Stress test completed successfully.\n");
 	munmap((void *)shared_mem_in, SHARED_MEM_SIZE);
 end:
 	return ret;
@@ -3241,7 +3319,7 @@ static int cmd_cptra(int fd, int num)
 
 	if (num < 0) {
 		for (int i = 0; i < cptra_tests_count; i++) {
-			printf("Running test: %s\n", cptra_tests[i].name);
+			info_printf("Running test: %s\n", cptra_tests[i].name);
 			ret = cptra_tests[i].func();
 			if (ret) {
 				printf("Test %s failed: %d\n", cptra_tests[i].name, ret);
@@ -3252,7 +3330,7 @@ static int cmd_cptra(int fd, int num)
 		printf("Total tests run: %d, Failures: %d\n", cptra_tests_count, results);
 
 	} else if (num >= 0 && num < cptra_tests_count) {
-		printf("Running test: %s\n", cptra_tests[num].name);
+		info_printf("Running test: %s\n", cptra_tests[num].name);
 		ret = cptra_tests[num].func();
 		if (ret)
 			printf("Test %s failed: %d\n", cptra_tests[num].name, ret);
@@ -3271,8 +3349,9 @@ static void usage(void)
 	printf("Usage:\n");
 	printf("1. aspeed_cptra [-v] list\n");
 	printf("\tlist all available mailbox devices\n\n");
-	printf("2. aspeed_cptra [-v] <dev_name> <subcommand> [args...]\n");
+	printf("2. aspeed_cptra [-v] [-q] <dev_name> <subcommand> [args...]\n");
 	printf("\t-v				# verbose: dump debug info\n");
+	printf("\t-q				# quiet: print nothing but FAIL/failed lines\n");
 	printf("\tall				# run all subcommands\n");
 	printf("\tlist				# list all subcommands\n");
 	printf("\t<num>				# run cptra subcommands #num\n");
@@ -3312,9 +3391,11 @@ int main(int argc, char *argv[])
 	char filename[262];
 	int fd, ret, opt;
 
-	while ((opt = getopt(argc, argv, "v")) != -1) {
+	while ((opt = getopt(argc, argv, "vq")) != -1) {
 		if (opt == 'v') {
 			verbose = 1;
+		} else if (opt == 'q') {
+			quiet = 1;
 		} else {
 			usage();
 			return 1;
@@ -3434,7 +3515,7 @@ int main(int argc, char *argv[])
 			return 1;
 		}
 
-		printf("num=%d\n", num);
+		info_printf("num=%d\n", num);
 		/* run cptra subcommand #num */
 		ret = cmd_cptra(fd, num);
 		if (ret) {

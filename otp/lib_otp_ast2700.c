@@ -527,12 +527,15 @@ int otp_prog_image_region(struct otp_image_layout *image_layout, enum otp_region
 
 	printf("Start Programming...\n");
 	for (int i = 0; i < size / 2; i++) {
+		if (buf[i] == 0)
+			continue;
+
 		otp_read_func(i, &otp_value);
 
 		/* Show warning if OTP value is not 0 and different from image data,
 		 * which may indicate the OTP bit has been programmed before
 		 */
-		if (otp_value && buf[i] && otp_value != buf[i])
+		if (otp_value && otp_value != buf[i])
 			printf("Warning: OTP region w_offset [0x%x]=0x%x prog to 0x%x\n",
 			       i, otp_value, buf[i]);
 

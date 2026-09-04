@@ -50,7 +50,7 @@ if platform == 'ast2700'
       install: true, dependencies: dependency('openssl'),
       include_directories: include_directories('otp'))
 elif platform == 'ast2705'
-  executable('otp-ast2705', 'otp/otp_ast2705.c',
+  executable('otp', 'otp/otp_ast2705.c',
       install: true,
       include_directories: include_directories('otp'))
 elif platform == 'ast2600'

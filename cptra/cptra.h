@@ -43,6 +43,16 @@ enum cptra_ipc_cmd {
 	CPTRA_IPCCMD_FIPS_SELF_TEST_GET_RESULTS,
 	CPTRA_IPCCMD_GET_PCR_LOG,
 	CPTRA_IPCCMD_REALLOCATE_DPE_CONTEXT_LIMITS,
+	/* New commands in caliptra-sw-rt-1.3.0 */
+	CPTRA_IPCCMD_MLDSA87_SIGNATURE_VERIFY,
+	CPTRA_IPCCMD_INVOKE_DPE_MLDSA87_COMMAND,
+	CPTRA_IPCCMD_GET_PQ_CERT,
+	CPTRA_IPCCMD_POPULATE_PQ_CERT,
+	CPTRA_IPCCMD_GET_PQ_CSR,
+	CPTRA_IPCCMD_GET_PQ_INFO,
+	CPTRA_IPCCMD_SET_PQ_SEED,
+	CPTRA_IPCCMD_CERTIFY_KEY_EXTENDED_MLDSA87,
+	CPTRA_IPCCMD_SIGN_WITH_EXPORTED_MLDSA,
 };
 
 enum cptra_ipc_rx_type {
@@ -281,6 +291,7 @@ enum dpe_command {
 enum dpe_profile {
 	p256sha256 = 3,
 	p384sha384 = 4,
+	mldsa87    = 5,
 };
 
 /* TODO: DPE command */
@@ -566,5 +577,136 @@ int cptra_test_invoke_dpe_command_derive_context_exported_cdi(uint8_t *derived_c
 int cptra_test_get_fmc_alias_csr(void);
 int cptra_test_sign_with_exported_ecdsa(uint8_t *exported_cdi);
 int cptra_test_revoke_exported_cdi_handle(uint8_t *exported_cdi);
+
+/* MLDSA87_SIGNATURE_VERIFY */
+/* Note: message digest must be loaded into SHA acc before calling this command */
+struct cptra_mldsa87_verify_ia {
+	uint8_t pub_key[2592];
+	uint8_t signature[4627];
+	uint8_t _pad;
+};
+
+struct cptra_mldsa87_verify_oa {
+	uint32_t chksum;
+	uint32_t fips_status;
+};
+
+/* INVOKE_DPE_MLDSA87 */
+struct cptra_invoke_dpe_mldsa87_command_ia {
+	uint32_t data_size;
+	uint8_t data[512];
+};
+
+struct cptra_invoke_dpe_mldsa87_command_oa {
+	uint32_t chksum;
+	uint32_t fips_status;
+	uint32_t data_size;
+	uint8_t data[25168];
+};
+
+/* GET_PQ_CERT */
+struct cptra_get_pq_cert_ia {
+	uint32_t tbs_size;
+	uint8_t signature[4627];
+	uint8_t tbs[3543];
+	uint8_t _pad[2];
+};
+
+struct cptra_get_pq_cert_oa {
+	uint32_t chksum;
+	uint32_t fips_status;
+	uint32_t cert_size;
+	uint8_t cert[8192];
+};
+
+/* POPULATE_PQ_CERT */
+struct cptra_populate_pq_cert_ia {
+	uint32_t cert_size;
+	uint8_t cert[8192];
+};
+
+struct cptra_populate_pq_cert_oa {
+	uint32_t chksum;
+	uint32_t fips_status;
+};
+
+/* GET_PQ_CSR */
+struct cptra_get_pq_csr_ia {
+};
+
+struct cptra_get_pq_csr_oa {
+	uint32_t chksum;
+	uint32_t fips_status;
+	uint32_t data_size;
+	uint8_t data[12800];
+};
+
+/* GET_PQ_INFO */
+struct cptra_get_pq_info_ia {
+};
+
+struct cptra_get_pq_info_oa {
+	uint32_t chksum;
+	uint32_t fips_status;
+	uint8_t pq_pub_key[2592];
+};
+
+/* SET_PQ_SEED */
+struct cptra_set_pq_seed_ia {
+	uint8_t seed[32];
+};
+
+struct cptra_set_pq_seed_oa {
+	uint32_t chksum;
+	uint32_t fips_status;
+};
+
+/* CERTIFY_KEY_EXTENDED_MLDSA87 */
+struct cptra_certify_key_extended_mldsa87_ia {
+	uint8_t certify_key_req[72];
+	uint32_t flags;
+};
+
+/* DPE CertifyKeyMldsa87Resp layout inside certify_key_resp */
+struct cptra_dpe_resp_hdr {
+	uint32_t magic;		/* 0x52455044 "DPER" */
+	uint32_t status;
+	uint32_t profile;
+};
+
+struct cptra_certify_key_mldsa87_resp {
+	struct cptra_dpe_resp_hdr resp_hdr;	/* 12 bytes */
+	uint8_t new_context_handle[16];		/* 16 bytes */
+	uint8_t pubkey[2592];			/* MLDSA87 public key */
+	uint32_t cert_size;
+	uint8_t cert[22 * 1024];		/* DER certificate, up to 22528 bytes */
+};
+
+struct cptra_certify_key_extended_mldsa87_oa {
+	uint32_t chksum;
+	uint32_t fips_status;
+	uint32_t size;
+	struct cptra_certify_key_mldsa87_resp certify_key_resp;
+};
+
+/* SIGN_WITH_EXPORTED_MLDSA */
+#define SIGN_WITH_EXPORTED_MLDSA_MODE_DATA		0
+#define SIGN_WITH_EXPORTED_MLDSA_MODE_EXTERNAL_MU	1
+#define SIGN_WITH_EXPORTED_MLDSA_MU_SIZE		64
+
+struct cptra_sign_with_exported_mldsa_ia {
+	uint8_t exported_cdi_handle[32];
+	uint32_t sign_mode;
+	uint32_t message_size;
+	uint8_t message[1024];
+};
+
+struct cptra_sign_with_exported_mldsa_oa {
+	uint32_t chksum;
+	uint32_t fips_status;
+	uint8_t derived_pubkey[2592];
+	uint8_t signature[4627];
+	uint8_t reserved;
+};
 
 #endif /* _CPTRA_H_ */

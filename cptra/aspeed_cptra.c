@@ -1842,8 +1842,8 @@ static int cptra_test_extend_pcr(void)
 	memset(&input, 0, sizeof(struct cptra_extend_pcr_ia));
 	memset(&output, 0, sizeof(struct cptra_extend_pcr_oa));
 
-	/* TODO: customize input data by application */
-	input.index = 31;
+	/* PCRs 0-3 and 31 are reserved by Caliptra; use 4-30 for application use */
+	input.index = 4;
 	input.value[0] = 0x28;
 	input.value[1] = 0x01;
 

@@ -3193,6 +3193,620 @@ end:
 	return ret;
 }
 
+static int cptra_test_get_pq_info(void)
+{
+	uint8_t *p8_bmcu_out = (uint8_t *)IPC_CHANNEL_1_BOOTMCU_OUT_ADDR;
+	uint8_t *p8_bmcu_in = (uint8_t *)IPC_CHANNEL_1_BOOTMCU_IN_ADDR;
+	struct cptra_get_pq_info_ia input;
+	struct cptra_get_pq_info_oa output;
+	enum cptra_ipc_cmd ipccmd = CPTRA_IPCCMD_GET_PQ_INFO;
+	uint32_t data[2];
+	int ret;
+
+	info_printf("%s: Start...\n", __func__);
+
+	data[0] = (uint32_t)(uintptr_t)p8_bmcu_in;
+	data[1] = (uint32_t)(uintptr_t)p8_bmcu_out;
+
+	memset(&input, 0, sizeof(input));
+	memset(&output, 0, sizeof(output));
+
+	safe_memcpy(shared_mem_in, (volatile uint8_t *)&input, sizeof(input));
+
+	ret = cptra_ipc_trigger(ipccmd, data, sizeof(data));
+	if (ret) {
+		printf("cptra_ipc_trigger:0x%x is failure, ret:0x%x\n", ipccmd, ret);
+		goto end;
+	}
+
+	ret = cptra_ipc_receive(CPTRA_IPC_RX_TYPE_EXTERNAL, &output, sizeof(output));
+	if (ret) {
+		printf("cptra_ipc_receive:0x%x is failure, ret:0x%x\n", ipccmd, ret);
+		goto end;
+	}
+
+	dbg_printf("output: chksum=0x%x, fips_status=0x%x\n", output.chksum, output.fips_status);
+	hexdump(output.pq_pub_key, sizeof(output.pq_pub_key), "PQ public key:");
+
+end:
+	if (ret)
+		printf("%s: Failed\n", __func__);
+	else
+		info_printf("%s: Pass\n", __func__);
+	return ret;
+}
+
+static int cptra_test_get_pq_csr(void)
+{
+	uint8_t *p8_bmcu_out = (uint8_t *)IPC_CHANNEL_1_BOOTMCU_OUT_ADDR;
+	uint8_t *p8_bmcu_in = (uint8_t *)IPC_CHANNEL_1_BOOTMCU_IN_ADDR;
+	struct cptra_get_pq_csr_ia input;
+	struct cptra_get_pq_csr_oa output;
+	enum cptra_ipc_cmd ipccmd = CPTRA_IPCCMD_GET_PQ_CSR;
+	uint32_t data[2];
+	int ret;
+
+	info_printf("%s: Start...\n", __func__);
+
+	data[0] = (uint32_t)(uintptr_t)p8_bmcu_in;
+	data[1] = (uint32_t)(uintptr_t)p8_bmcu_out;
+
+	memset(&input, 0, sizeof(input));
+	memset(&output, 0, sizeof(output));
+
+	safe_memcpy(shared_mem_in, (volatile uint8_t *)&input, sizeof(input));
+
+	ret = cptra_ipc_trigger(ipccmd, data, sizeof(data));
+	if (ret) {
+		printf("cptra_ipc_trigger:0x%x is failure, ret:0x%x\n", ipccmd, ret);
+		goto end;
+	}
+
+	ret = cptra_ipc_receive(CPTRA_IPC_RX_TYPE_EXTERNAL, &output, sizeof(output));
+	if (ret) {
+		printf("cptra_ipc_receive:0x%x is failure, ret:0x%x\n", ipccmd, ret);
+		goto end;
+	}
+
+	dbg_printf("output: chksum=0x%x, fips_status=0x%x\n", output.chksum, output.fips_status);
+	info_printf("PQ CSR size: %u bytes\n", output.data_size);
+	if (output.data_size && output.data_size <= sizeof(output.data))
+		hexdump(output.data, output.data_size, "PQ CSR:");
+
+end:
+	if (ret)
+		printf("%s: Failed\n", __func__);
+	else
+		info_printf("%s: Pass\n", __func__);
+	return ret;
+}
+
+static int cptra_test_set_pq_seed(void)
+{
+	uint8_t *p8_bmcu_out = (uint8_t *)IPC_CHANNEL_1_BOOTMCU_OUT_ADDR;
+	uint8_t *p8_bmcu_in = (uint8_t *)IPC_CHANNEL_1_BOOTMCU_IN_ADDR;
+	struct cptra_set_pq_seed_ia input;
+	struct cptra_set_pq_seed_oa output;
+	enum cptra_ipc_cmd ipccmd = CPTRA_IPCCMD_SET_PQ_SEED;
+	uint32_t data[2];
+	int ret;
+
+	info_printf("%s: Start...\n", __func__);
+
+	data[0] = (uint32_t)(uintptr_t)p8_bmcu_in;
+	data[1] = (uint32_t)(uintptr_t)p8_bmcu_out;
+
+	memset(&input, 0, sizeof(input));
+	memset(&output, 0, sizeof(output));
+
+	/* Use a test seed value (all 0x42 for testing) */
+	memset(input.seed, 0x42, sizeof(input.seed));
+
+	safe_memcpy(shared_mem_in, (volatile uint8_t *)&input, sizeof(input));
+
+	ret = cptra_ipc_trigger(ipccmd, data, sizeof(data));
+	if (ret) {
+		printf("cptra_ipc_trigger:0x%x is failure, ret:0x%x\n", ipccmd, ret);
+		goto end;
+	}
+
+	ret = cptra_ipc_receive(CPTRA_IPC_RX_TYPE_EXTERNAL, &output, sizeof(output));
+	if (ret) {
+		printf("cptra_ipc_receive:0x%x is failure, ret:0x%x\n", ipccmd, ret);
+		goto end;
+	}
+
+	dbg_printf("output: chksum=0x%x, fips_status=0x%x\n", output.chksum, output.fips_status);
+
+end:
+	if (ret)
+		printf("%s: Failed\n", __func__);
+	else
+		info_printf("%s: Pass\n", __func__);
+	return ret;
+}
+
+static int cptra_test_mldsa87_verify(void)
+{
+	uint8_t *p8_bmcu_out = (uint8_t *)IPC_CHANNEL_1_BOOTMCU_OUT_ADDR;
+	uint8_t *p8_bmcu_in = (uint8_t *)IPC_CHANNEL_1_BOOTMCU_IN_ADDR;
+	const struct mldsa87_verify_testvec *tv = mldsa87_verify_tv;
+	int tv_size = ARRAY_SIZE(mldsa87_verify_tv);
+	struct cptra_mldsa87_verify_ia input;
+	struct cptra_mldsa87_verify_oa output;
+	enum cptra_ipc_cmd ipccmd = CPTRA_IPCCMD_MLDSA87_SIGNATURE_VERIFY;
+	uint8_t digest[48];
+	uint32_t data[2];
+	int ret;
+
+	info_printf("%s: Start...\n", __func__);
+
+	data[0] = (uint32_t)(uintptr_t)p8_bmcu_in;
+	data[1] = (uint32_t)(uintptr_t)p8_bmcu_out;
+
+	for (int i = 0; i < tv_size; i++) {
+		dbg_printf("Test vector %d\n", i);
+
+		/* Hash message into SHA acc; MLDSA87_SIGNATURE_VERIFY reads sha384 from SHA acc */
+		ret = cptra_sha384((uint8_t *)tv[i].msg, tv[i].msg_size,
+				   digest, sizeof(digest));
+		if (ret) {
+			printf("cptra_sha384 failure, ret:0x%x\n", ret);
+			goto end;
+		}
+		dbg_hexdump(digest, sizeof(digest), "msg sha384:");
+
+		memset(&input, 0, sizeof(input));
+		memset(&output, 0, sizeof(output));
+		memcpy(input.pub_key, tv[i].pub_key, sizeof(input.pub_key));
+		memcpy(input.signature, tv[i].signature, sizeof(input.signature));
+
+		safe_memcpy(shared_mem_in, (volatile uint8_t *)&input, sizeof(input));
+
+		ret = cptra_ipc_trigger(ipccmd, data, sizeof(data));
+		if (ret) {
+			printf("cptra_ipc_trigger:0x%x is failure, ret:0x%x\n", ipccmd, ret);
+			goto end;
+		}
+
+		ret = cptra_ipc_receive(CPTRA_IPC_RX_TYPE_EXTERNAL, &output, sizeof(output));
+		if (ret) {
+			printf("cptra_ipc_receive:0x%x is failure, ret:0x%x\n", ipccmd, ret);
+			goto end;
+		}
+
+		dbg_printf("output: chksum=0x%x, fips_status=0x%x\n",
+			   output.chksum, output.fips_status);
+
+		if (tv[i].result && ret) {
+			printf("TV %d: expected pass but failed\n", i);
+			goto end;
+		} else if (!tv[i].result && !ret) {
+			printf("TV %d: expected fail but passed\n", i);
+			ret = -1;
+			goto end;
+		}
+		dbg_printf("TV %d: Pass\n", i);
+	}
+
+end:
+	if (ret)
+		printf("%s: Failed\n", __func__);
+	else
+		info_printf("%s: Pass\n", __func__);
+	return ret;
+}
+
+static int cptra_test_invoke_dpe_mldsa87_command(void)
+{
+	uint8_t *p8_bmcu_out = (uint8_t *)IPC_CHANNEL_1_BOOTMCU_OUT_ADDR;
+	uint8_t *p8_bmcu_in = (uint8_t *)IPC_CHANNEL_1_BOOTMCU_IN_ADDR;
+	uint32_t data[2] = { (uint32_t)(uintptr_t)p8_bmcu_in,
+			     (uint32_t)(uintptr_t)p8_bmcu_out };
+	struct cptra_invoke_dpe_mldsa87_command_ia input;
+	struct cptra_invoke_dpe_mldsa87_command_oa output;
+	struct dpe_get_profile_i *get_profile_input = NULL;
+	struct dpe_get_profile_o *get_profile_output = NULL;
+	enum cptra_ipc_cmd ipccmd = CPTRA_IPCCMD_INVOKE_DPE_MLDSA87_COMMAND;
+	int ret;
+
+	info_printf("%s: Start (GetProfile via INVOKE_DPE_MLDSA87)...\n", __func__);
+
+	memset(&input, 0, sizeof(input));
+	memset(&output, 0, sizeof(output));
+
+	get_profile_input = (struct dpe_get_profile_i *)input.data;
+	get_profile_input->cmd_hdr.magic = DPE_COMMAND_MAGIC;
+	get_profile_input->cmd_hdr.cmd = GET_PROFILE;
+	input.data_size = sizeof(struct dpe_get_profile_i);
+
+	get_profile_output = (struct dpe_get_profile_o *)output.data;
+
+	safe_memcpy(shared_mem_in, (volatile uint8_t *)&input,
+		    sizeof(struct cptra_invoke_dpe_mldsa87_command_ia));
+
+	ret = cptra_ipc_trigger(ipccmd, data, sizeof(data));
+	if (ret) {
+		printf("cptra_ipc_trigger:0x%x is failure, ret:0x%x\n", ipccmd, ret);
+		goto end;
+	}
+
+	ret = cptra_ipc_receive(CPTRA_IPC_RX_TYPE_EXTERNAL, &output, sizeof(output));
+	if (ret) {
+		printf("cptra_ipc_receive:0x%x is failure, ret:0x%x\n", ipccmd, ret);
+		goto end;
+	}
+
+	dbg_printf("output: chksum=0x%x, fips_status=0x%x\n", output.chksum, output.fips_status);
+
+	if (cptra_dpe_response_check(&get_profile_output->rsp_hdr)) {
+		cptra_print_dpe_failure(&get_profile_output->rsp_hdr);
+		ret = -1;
+	} else {
+		info_printf("DPE MLDSA87 Profile: %08x\n",
+			    get_profile_output->rsp_hdr.profile);
+		info_printf("Major: %04x Minor: %04x\n",
+			    get_profile_output->major_version,
+			    get_profile_output->minor_version);
+	}
+
+end:
+	if (ret)
+		printf("%s: Failed\n", __func__);
+	else
+		info_printf("%s: Pass\n", __func__);
+	return ret;
+}
+
+static int cptra_test_get_pq_cert(void)
+{
+	/* Sample TBS: arbitrary bytes; GET_PQ_CERT assembles the DER cert without
+	 * verifying the signature, so any non-zero TBS + signature pattern works.
+	 */
+	static const uint8_t sample_tbs[] = "PQ cert TBS sample data for GET_PQ_CERT test";
+	uint8_t *p8_bmcu_out = (uint8_t *)IPC_CHANNEL_1_BOOTMCU_OUT_ADDR;
+	uint8_t *p8_bmcu_in = (uint8_t *)IPC_CHANNEL_1_BOOTMCU_IN_ADDR;
+	struct cptra_get_pq_cert_ia input;
+	struct cptra_get_pq_cert_oa output;
+	enum cptra_ipc_cmd ipccmd = CPTRA_IPCCMD_GET_PQ_CERT;
+	uint32_t data[2];
+	int ret;
+
+	info_printf("%s: Start...\n", __func__);
+
+	data[0] = (uint32_t)(uintptr_t)p8_bmcu_in;
+	data[1] = (uint32_t)(uintptr_t)p8_bmcu_out;
+
+	memset(&input, 0, sizeof(input));
+	memset(&output, 0, sizeof(output));
+
+	/* Fill TBS with sample data */
+	input.tbs_size = sizeof(sample_tbs) - 1;
+	memcpy(input.tbs, sample_tbs, input.tbs_size);
+
+	/* Fill signature with a repeating pattern (0xa5) - not cryptographically
+	 * valid but sufficient to exercise the DER assembly path.
+	 */
+	memset(input.signature, 0xa5, sizeof(input.signature));
+
+	safe_memcpy(shared_mem_in, (volatile uint8_t *)&input, sizeof(input));
+
+	ret = cptra_ipc_trigger(ipccmd, data, sizeof(data));
+	if (ret) {
+		printf("cptra_ipc_trigger:0x%x is failure, ret:0x%x\n", ipccmd, ret);
+		goto end;
+	}
+
+	ret = cptra_ipc_receive(CPTRA_IPC_RX_TYPE_EXTERNAL, &output, sizeof(output));
+	if (ret) {
+		printf("cptra_ipc_receive:0x%x is failure, ret:0x%x\n", ipccmd, ret);
+		goto end;
+	}
+
+	dbg_printf("output: chksum=0x%x, fips_status=0x%x\n", output.chksum, output.fips_status);
+	info_printf("PQ cert size: %u bytes\n", output.cert_size);
+	if (output.cert_size && output.cert_size <= sizeof(output.cert))
+		hexdump(output.cert, output.cert_size, "PQ cert:");
+
+end:
+	if (ret)
+		printf("%s: Failed\n", __func__);
+	else
+		info_printf("%s: Pass\n", __func__);
+	return ret;
+}
+
+static int cptra_test_populate_pq_cert(void)
+{
+	/* Sample cert: 64-byte 0xa5 pattern (same as caliptra integration tests).
+	 * POPULATE_PQ_CERT stores raw bytes without X.509 validation.
+	 */
+	static const uint32_t sample_cert_size = 64;
+	static const uint8_t sample_cert_pattern = 0xa5;
+	uint8_t *p8_bmcu_out = (uint8_t *)IPC_CHANNEL_1_BOOTMCU_OUT_ADDR;
+	uint8_t *p8_bmcu_in = (uint8_t *)IPC_CHANNEL_1_BOOTMCU_IN_ADDR;
+	struct cptra_populate_pq_cert_ia input;
+	struct cptra_populate_pq_cert_oa output;
+	struct cptra_invoke_dpe_mldsa87_command_ia dc_input;
+	struct cptra_invoke_dpe_mldsa87_command_oa dc_output;
+	struct dpe_get_certificate_chain_i *gc_input;
+	enum cptra_ipc_cmd ipccmd;
+	uint32_t data[2];
+	const uint8_t *chain_data;
+	uint32_t chain_size;
+	uint32_t i;
+	int found;
+	int ret;
+
+	info_printf("%s: Start...\n", __func__);
+
+	data[0] = (uint32_t)(uintptr_t)p8_bmcu_in;
+	data[1] = (uint32_t)(uintptr_t)p8_bmcu_out;
+
+	/* Step 1: Populate the PQ cert chain with a 64-byte 0xa5 pattern */
+	ipccmd = CPTRA_IPCCMD_POPULATE_PQ_CERT;
+	memset(&input, 0, sizeof(input));
+	memset(&output, 0, sizeof(output));
+
+	input.cert_size = sample_cert_size;
+	memset(input.cert, sample_cert_pattern, sample_cert_size);
+
+	info_printf("Populating PQ cert: %u bytes of 0x%02x\n",
+		    input.cert_size, sample_cert_pattern);
+	safe_memcpy(shared_mem_in, (volatile uint8_t *)&input, sizeof(input));
+
+	ret = cptra_ipc_trigger(ipccmd, data, sizeof(data));
+	if (ret) {
+		printf("cptra_ipc_trigger:0x%x is failure, ret:0x%x\n", ipccmd, ret);
+		goto end;
+	}
+
+	ret = cptra_ipc_receive(CPTRA_IPC_RX_TYPE_EXTERNAL, &output, sizeof(output));
+	if (ret) {
+		printf("cptra_ipc_receive:0x%x is failure, ret:0x%x\n", ipccmd, ret);
+		goto end;
+	}
+
+	dbg_printf("output: chksum=0x%x, fips_status=0x%x\n", output.chksum, output.fips_status);
+
+	/* Step 2: Verify via MLDSA87 DPE GetCertificateChain.
+	 * The populated cert must appear verbatim in the returned chain.
+	 */
+	ipccmd = CPTRA_IPCCMD_INVOKE_DPE_MLDSA87_COMMAND;
+	memset(&dc_input, 0, sizeof(dc_input));
+	memset(&dc_output, 0, sizeof(dc_output));
+
+	gc_input = (struct dpe_get_certificate_chain_i *)dc_input.data;
+	gc_input->cmd_hdr.magic = DPE_COMMAND_MAGIC;
+	gc_input->cmd_hdr.cmd = GET_CERTIFICATE_CHAIN;
+	gc_input->cmd_hdr.profile = mldsa87;
+	gc_input->offset = 0;
+	gc_input->size = 2048; /* MAX_CHUNK_SIZE; must not exceed this or DPE returns InvalidArgument */
+	dc_input.data_size = sizeof(struct dpe_get_certificate_chain_i);
+
+	safe_memcpy(shared_mem_in, (volatile uint8_t *)&dc_input, sizeof(dc_input));
+
+	ret = cptra_ipc_trigger(ipccmd, data, sizeof(data));
+	if (ret) {
+		printf("cptra_ipc_trigger:0x%x is failure, ret:0x%x\n", ipccmd, ret);
+		goto end;
+	}
+
+	ret = cptra_ipc_receive(CPTRA_IPC_RX_TYPE_EXTERNAL, &dc_output, sizeof(dc_output));
+	if (ret) {
+		printf("cptra_ipc_receive:0x%x is failure, ret:0x%x\n", ipccmd, ret);
+		goto end;
+	}
+
+	/* dpe_get_certificate_chain_o layout: rsp_hdr(12) + size(4) + cert_chain */
+	{
+		struct dpe_rsp_header *gc_rsp_hdr = (struct dpe_rsp_header *)dc_output.data;
+		const uint32_t chain_data_max = sizeof(dc_output.data)
+					      - sizeof(struct dpe_rsp_header)
+					      - sizeof(uint32_t);
+
+		if (cptra_dpe_response_check(gc_rsp_hdr)) {
+			cptra_print_dpe_failure(gc_rsp_hdr);
+			ret = -1;
+			goto end;
+		}
+
+		chain_size = *((uint32_t *)(dc_output.data + sizeof(struct dpe_rsp_header)));
+		chain_data = dc_output.data + sizeof(struct dpe_rsp_header) + sizeof(uint32_t);
+
+		info_printf("GetCertificateChain returned %u bytes\n", chain_size);
+
+		if (chain_size > chain_data_max) {
+			printf("%s: chain_size %u exceeds buffer %u\n",
+			       __func__, chain_size, chain_data_max);
+			ret = -1;
+			goto end;
+		}
+
+		dbg_hexdump(chain_data, chain_size, "cert chain:");
+
+		/* Search for the populated 64-byte 0xa5 pattern in the chain */
+		found = 0;
+		if (chain_size >= sample_cert_size) {
+			for (i = 0; i <= chain_size - sample_cert_size; i++) {
+				uint32_t j;
+
+				for (j = 0; j < sample_cert_size; j++) {
+					if (chain_data[i + j] != sample_cert_pattern)
+						break;
+				}
+				if (j == sample_cert_size) {
+					found = 1;
+					info_printf("Populated cert found in chain at offset %u\n", i);
+					break;
+				}
+			}
+		}
+
+		if (!found) {
+			printf("%s: Populated cert NOT found in GetCertificateChain response!\n",
+			       __func__);
+			ret = -1;
+		}
+	}
+
+end:
+	if (ret)
+		printf("%s: Failed\n", __func__);
+	else
+		info_printf("%s: Pass\n", __func__);
+	return ret;
+}
+
+static int cptra_test_certify_key_extended_mldsa87(void)
+{
+	uint8_t *p8_bmcu_out = (uint8_t *)IPC_CHANNEL_1_BOOTMCU_OUT_ADDR;
+	uint8_t *p8_bmcu_in = (uint8_t *)IPC_CHANNEL_1_BOOTMCU_IN_ADDR;
+	struct cptra_certify_key_extended_mldsa87_ia input;
+	struct cptra_certify_key_extended_mldsa87_oa output;
+	enum cptra_ipc_cmd ipccmd = CPTRA_IPCCMD_CERTIFY_KEY_EXTENDED_MLDSA87;
+	uint32_t data[2];
+	int ret;
+
+	info_printf("%s: Start...\n", __func__);
+
+	data[0] = (uint32_t)(uintptr_t)p8_bmcu_in;
+	data[1] = (uint32_t)(uintptr_t)p8_bmcu_out;
+
+	memset(&input, 0, sizeof(input));
+	memset(&output, 0, sizeof(output));
+
+	safe_memcpy(shared_mem_in, (volatile uint8_t *)&input, sizeof(input));
+
+	ret = cptra_ipc_trigger(ipccmd, data, sizeof(data));
+	if (ret) {
+		printf("cptra_ipc_trigger:0x%x is failure, ret:0x%x\n", ipccmd, ret);
+		goto end;
+	}
+
+	ret = cptra_ipc_receive(CPTRA_IPC_RX_TYPE_EXTERNAL, &output, sizeof(output));
+	if (ret) {
+		printf("cptra_ipc_receive:0x%x is failure, ret:0x%x\n", ipccmd, ret);
+		goto end;
+	}
+
+	dbg_printf("output: chksum=0x%x, fips_status=0x%x\n", output.chksum, output.fips_status);
+	info_printf("certify_key_extended_mldsa87 resp size: %u bytes\n", output.size);
+	if (output.size && output.size <= sizeof(output.certify_key_resp)) {
+		struct cptra_certify_key_mldsa87_resp *resp = &output.certify_key_resp;
+
+		info_printf("  dpe resp_hdr: magic=0x%08x, status=0x%x, profile=0x%x\n",
+			    resp->resp_hdr.magic, resp->resp_hdr.status, resp->resp_hdr.profile);
+		hexdump(resp->new_context_handle, sizeof(resp->new_context_handle),
+			"  new_context_handle:");
+		hexdump(resp->pubkey, sizeof(resp->pubkey), "  pubkey:");
+		info_printf("  cert_size: %u bytes\n", resp->cert_size);
+		if (resp->cert_size && resp->cert_size <= sizeof(resp->cert))
+			hexdump(resp->cert, resp->cert_size, "  cert:");
+	}
+
+end:
+	if (ret)
+		printf("%s: Failed\n", __func__);
+	else
+		info_printf("%s: Pass\n", __func__);
+	return ret;
+}
+
+static int cptra_test_sign_with_exported_mldsa(void)
+{
+	static const uint8_t test_msg[] = "MLDSA87 sign test message";
+	uint8_t *p8_bmcu_out = (uint8_t *)IPC_CHANNEL_1_BOOTMCU_OUT_ADDR;
+	uint8_t *p8_bmcu_in = (uint8_t *)IPC_CHANNEL_1_BOOTMCU_IN_ADDR;
+	struct cptra_invoke_dpe_mldsa87_command_ia dc_input;
+	struct cptra_invoke_dpe_mldsa87_command_oa dc_output;
+	struct cptra_sign_with_exported_mldsa_ia input;
+	struct cptra_sign_with_exported_mldsa_oa output;
+	struct dpe_derive_context_i *derive_context_input;
+	struct dpe_derive_context_exported_cdi_o *derive_context_output;
+	enum cptra_ipc_cmd ipccmd;
+	uint32_t data[2];
+	int ret;
+
+	info_printf("%s: Start...\n", __func__);
+
+	data[0] = (uint32_t)(uintptr_t)p8_bmcu_in;
+	data[1] = (uint32_t)(uintptr_t)p8_bmcu_out;
+
+	/* Step 1: DeriveContext + EXPORT_CDI via MLDSA87 DPE to obtain a valid exported CDI handle */
+	ipccmd = CPTRA_IPCCMD_INVOKE_DPE_MLDSA87_COMMAND;
+	memset(&dc_input, 0, sizeof(dc_input));
+	memset(&dc_output, 0, sizeof(dc_output));
+
+	derive_context_input = (struct dpe_derive_context_i *)dc_input.data;
+	derive_context_input->cmd_hdr.magic = DPE_COMMAND_MAGIC;
+	derive_context_input->cmd_hdr.cmd = DERIVE_CONTEXT;
+	derive_context_input->cmd_hdr.profile = mldsa87;
+	derive_context_input->flags = EXPORT_CDI | CREATE_CERTIFICATE | RETAIN_PARENT_CONTEXT;
+	dc_input.data_size = sizeof(struct dpe_derive_context_i);
+
+	derive_context_output = (struct dpe_derive_context_exported_cdi_o *)dc_output.data;
+
+	safe_memcpy(shared_mem_in, (volatile uint8_t *)&dc_input, sizeof(dc_input));
+	ret = cptra_ipc_trigger(ipccmd, data, sizeof(data));
+	if (ret) {
+		printf("cptra_ipc_trigger:0x%x is failure, ret:0x%x\n", ipccmd, ret);
+		goto end;
+	}
+
+	ret = cptra_ipc_receive(CPTRA_IPC_RX_TYPE_EXTERNAL, &dc_output, sizeof(dc_output));
+	if (ret) {
+		printf("cptra_ipc_receive:0x%x is failure, ret:0x%x\n", ipccmd, ret);
+		goto end;
+	}
+
+	if (cptra_dpe_response_check(&derive_context_output->rsp_hdr)) {
+		cptra_print_dpe_failure(&derive_context_output->rsp_hdr);
+		ret = -1;
+		goto end;
+	}
+
+	dbg_hexdump(derive_context_output->exported_cdi,
+		    sizeof(derive_context_output->exported_cdi),
+		    "MLDSA87 exported_cdi:");
+
+	/* Step 2: Sign with the obtained exported CDI handle */
+	ipccmd = CPTRA_IPCCMD_SIGN_WITH_EXPORTED_MLDSA;
+	memset(&input, 0, sizeof(input));
+	memset(&output, 0, sizeof(output));
+
+	memcpy(input.exported_cdi_handle, derive_context_output->exported_cdi,
+	       sizeof(input.exported_cdi_handle));
+	input.sign_mode = SIGN_WITH_EXPORTED_MLDSA_MODE_DATA;
+	input.message_size = sizeof(test_msg) - 1;
+	memcpy(input.message, test_msg, input.message_size);
+
+	safe_memcpy(shared_mem_in, (volatile uint8_t *)&input, sizeof(input));
+
+	ret = cptra_ipc_trigger(ipccmd, data, sizeof(data));
+	if (ret) {
+		printf("cptra_ipc_trigger:0x%x is failure, ret:0x%x\n", ipccmd, ret);
+		goto end;
+	}
+
+	ret = cptra_ipc_receive(CPTRA_IPC_RX_TYPE_EXTERNAL, &output, sizeof(output));
+	if (ret) {
+		printf("cptra_ipc_receive:0x%x is failure, ret:0x%x\n", ipccmd, ret);
+		goto end;
+	}
+
+	dbg_printf("output: chksum=0x%x, fips_status=0x%x\n", output.chksum, output.fips_status);
+	hexdump(output.derived_pubkey, sizeof(output.derived_pubkey), "MLDSA87 derived_pubkey:");
+	hexdump(output.signature, sizeof(output.signature), "MLDSA87 signature:");
+
+end:
+	if (ret)
+		printf("%s: Failed\n", __func__);
+	else
+		info_printf("%s: Pass\n", __func__);
+	return ret;
+}
+
 typedef int (*cptra_test_func_t)(void);
 
 struct cptra_test_entry {
@@ -3240,6 +3854,18 @@ static struct cptra_test_entry cptra_tests[] = {
 	{ "fips_self_test_get_results",		cptra_test_fips_self_test_get_results },
 	{ "get_pcr_log",			cptra_test_get_pcr_log },
 	{ "reallocate_dpe_context_limits",	cptra_test_reallocate_dpe_context_limits },
+
+	/* New commands in caliptra-sw-rt-1.3.0 */
+	/* set_pq_seed must run before get_pq_info/get_pq_csr/get_pq_cert */
+	{ "set_pq_seed",			cptra_test_set_pq_seed },
+	{ "get_pq_info",			cptra_test_get_pq_info },
+	{ "get_pq_csr",				cptra_test_get_pq_csr },
+	{ "mldsa87_verify",			cptra_test_mldsa87_verify },
+	{ "invoke_dpe_mldsa87_command",		cptra_test_invoke_dpe_mldsa87_command },
+	{ "get_pq_cert",			cptra_test_get_pq_cert },
+	{ "populate_pq_cert",			cptra_test_populate_pq_cert },
+	{ "certify_key_extended_mldsa87",	cptra_test_certify_key_extended_mldsa87 },
+	{ "sign_with_exported_mldsa",		cptra_test_sign_with_exported_mldsa },
 };
 
 static int cptra_tests_count = ARRAY_SIZE(cptra_tests);
@@ -3280,7 +3906,8 @@ static int stress_cptra(int fd)
 			    strcmp(cptra_tests[j].name, "invoke_dpe_command") == 0 ||
 			    strcmp(cptra_tests[j].name, "cert_chain_verify") == 0 ||
 			    strcmp(cptra_tests[j].name, "fips_self_test_start") == 0 ||
-			    strcmp(cptra_tests[j].name, "reallocate_dpe_context_limits") == 0)
+			    strcmp(cptra_tests[j].name, "reallocate_dpe_context_limits") == 0 ||
+			    strcmp(cptra_tests[j].name, "disable_attestation") == 0)
 				continue; // Skip tests that may alter state
 
 			// Skip get_cert_chain tests since not all chips are provisioned.

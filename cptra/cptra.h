@@ -36,6 +36,7 @@ enum cptra_ipc_cmd {
 	CPTRA_IPCCMD_CAPABILITIES,
 	CPTRA_IPCCMD_SET_AUTH_MANIFEST,
 	CPTRA_IPCCMD_AUTHORIZE_AND_STASH,
+	CPTRA_IPCCMD_GET_IDEV_CSR,
 	CPTRA_IPCCMD_GET_FMC_ALIAS_CSR,
 	CPTRA_IPCCMD_SIGN_WITH_EXPORTED_ECDSA,
 	CPTRA_IPCCMD_REVOKE_EXPORTED_CDI_HANDLE,
@@ -145,14 +146,15 @@ struct cptra_add_subject_alt_name_oa {
 };
 
 struct cptra_certify_key_extended_ia {
-	uint8_t certify_key_req[72];
 	uint32_t flags;
+	uint8_t certify_key_req[72];
 };
 
 struct cptra_certify_key_extended_oa {
 	uint32_t chksum;
 	uint32_t fips_status;
-	uint8_t certify_key_resp[2176];
+	uint32_t size;
+	uint8_t certify_key_resp[25152];
 };
 
 struct cptra_disable_attestation_ia {
@@ -164,9 +166,9 @@ struct cptra_disable_attestation_oa {
 };
 
 struct cptra_get_idev_cert_ia {
+	uint32_t tbs_size;
 	uint8_t signature_r[48];
 	uint8_t signature_s[48];
-	uint32_t tbs_size;
 	uint8_t tbs[916];
 };
 
@@ -244,6 +246,8 @@ struct cptra_fw_info_oa {
 	uint32_t rom_sha256_digest[8];
 	uint32_t fmc_sha384_digest[12];
 	uint32_t runtime_sha384_digest[12];
+	uint32_t owner_pub_key_hash[12];
+	uint32_t authman_sha384_digest[12]; /* rt-1.3.0+ */
 };
 
 struct cptra_capabilities_ia {
@@ -428,14 +432,14 @@ struct dpe_get_certificate_chain_o {
 
 struct cptra_invoke_dpe_command_ia {
 	uint32_t data_size;
-	uint8_t data[256];
+	uint8_t data[512];
 };
 
 struct cptra_invoke_dpe_command_oa {
 	uint32_t chksum;
 	uint32_t fips_status;
 	uint32_t data_size;
-	uint8_t data[4096];
+	uint8_t data[25152];
 };
 
 #define CPTRA_IMC_ENTRY_COUNT			127	/* Max IMC entry count */
@@ -505,6 +509,16 @@ enum image_hash_source {
 
 #define AUTHORIZE_AND_STASH_FLAGS_SKIP_STASH	BIT(0)
 
+struct cptra_get_idev_csr_ia {
+};
+
+struct cptra_get_idev_csr_oa {
+	uint32_t chksum;
+	uint32_t fips_status;
+	uint32_t data_size;
+	uint8_t data[512];
+};
+
 struct cptra_get_fmc_alias_csr_ia {
 };
 
@@ -558,6 +572,8 @@ struct cptra_sign_with_exported_ecdsa_ia {
 };
 
 struct cptra_sign_with_exported_ecdsa_oa {
+	uint32_t chksum;
+	uint32_t fips_status;
 	uint8_t derived_pubkey_x[48];
 	uint8_t derived_pubkey_y[48];
 	uint8_t signature_r[48];

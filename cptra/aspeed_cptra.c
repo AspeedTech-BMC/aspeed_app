@@ -1158,6 +1158,10 @@ static int cptra_test_fw_info(void)
 		    "fmc_sha384_digest:");
 	dbg_hexdump(output.runtime_sha384_digest, sizeof(output.runtime_sha384_digest),
 		    "runtime_sha384_digest:");
+	dbg_hexdump(output.owner_pub_key_hash, sizeof(output.owner_pub_key_hash),
+		    "owner_pub_key_hash:");
+	dbg_hexdump(output.authman_sha384_digest, sizeof(output.authman_sha384_digest),
+		    "authman_sha384_digest:");
 
 end:
 	if (ret)

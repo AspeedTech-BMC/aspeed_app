@@ -294,10 +294,45 @@ static void hexdump(const void *data, size_t size, const char *title)
 	}
 }
 
+/*
+ * Parse a DER SEQUENCE TLV at buf[0] and return the total encoded length
+ * (tag + length-field + content). Returns -1 if malformed or truncated.
+ */
+static int der_seq_total_len(const uint8_t *buf, int buf_len)
+{
+	int hdr_len, content_len;
+
+	if (buf_len < 2 || buf[0] != 0x30)
+		return -1;
+
+	if (buf[1] < 0x80) {
+		hdr_len = 2;
+		content_len = buf[1];
+	} else if (buf[1] == 0x81) {
+		if (buf_len < 3)
+			return -1;
+		hdr_len = 3;
+		content_len = buf[2];
+	} else if (buf[1] == 0x82) {
+		if (buf_len < 4)
+			return -1;
+		hdr_len = 4;
+		content_len = ((int)buf[2] << 8) | buf[3];
+	} else {
+		return -1; /* unsupported multi-byte length */
+	}
+
+	if (hdr_len + content_len > buf_len)
+		return -1;
+
+	return hdr_len + content_len;
+}
+
 static int cptra_test_get_idevid_csr(void)
 {
 	uint8_t csr[IDEVID_CSR_SIZE];
 	volatile uint8_t *shared_mem_in;
+	int csr_len;
 
 	shared_mem_in = (volatile uint8_t *)map_phys(IDEVID_CSR_BASE, PAGE_SIZE);
 	if (!shared_mem_in) {
@@ -306,10 +341,16 @@ static int cptra_test_get_idevid_csr(void)
 	}
 
 	safe_memcpy(csr, (volatile uint8_t *)shared_mem_in + IDEVID_CSR_OFFSET, IDEVID_CSR_SIZE);
-
-	hexdump(csr, IDEVID_CSR_SIZE, "IDEVID CSR:");
-
 	munmap((void *)shared_mem_in, PAGE_SIZE);
+
+	csr_len = der_seq_total_len(csr, IDEVID_CSR_SIZE);
+	if (csr_len < 0) {
+		printf("IDEVID CSR: invalid DER SEQUENCE (tag=0x%02x)\n", csr[0]);
+		return -1;
+	}
+
+	info_printf("IDEVID CSR: %d bytes\n", csr_len);
+	hexdump(csr, csr_len, "IDEVID CSR:");
 	return 0;
 }
 

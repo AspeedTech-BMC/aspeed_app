@@ -15,6 +15,7 @@
 #include <termios.h>
 #include <termios.h>
 #include <ctype.h>
+#include <sys/mman.h>
 #include "otp_ast2700.h"
 #include "otp_info_ast2700.h"
 
@@ -1307,6 +1308,375 @@ end:
 	return ret;
 }
 
+struct reprog_ecc_entry {
+	const char *name;
+	uint32_t    ecc_id;      /* OTP_REGION_ID_* for ASPEED_OTP_SET_ECC_POLICY */
+	int         mode;        /* OTP_REGION_* for otp_prog_data */
+	uint32_t    word_offset; /* starting word offset within the region */
+	uint32_t    n_words;
+	int        (*read_fn)(uint32_t offset, uint16_t *data);
+};
+
+#define OTP_USR_SLOT_WORDS	320
+
+static int otp_ecc_policy_region_id(const char *name, uint32_t *id);
+
+static const struct reprog_ecc_entry reprog_ecc_tbl[] = {
+	{ "conf",         OTP_REGION_ID_CFG,     OTP_REGION_CONF,         0,                    OTP_CONF_REGION_SIZE,          otp_read_conf          },
+	{ "strap-ext",     OTP_REGION_ID_STRAPEXT, OTP_REGION_STRAP_EXT,     0,                   OTP_STRAP_EXT_REGION_SIZE / 2, otp_read_strap_ext     },
+	{ "strap-ext-vld", OTP_REGION_ID_STRAPEXT, OTP_REGION_STRAP_EXT_VLD, 0,                  OTP_STRAP_EXT_REGION_SIZE / 2, otp_read_strap_ext_vld },
+	{ "u-data0",      OTP_REGION_ID_USR,     OTP_REGION_USER,         0,                    OTP_USR_SLOT_WORDS,            otp_read_udata         },
+	{ "u-data1",      OTP_REGION_ID_USR,     OTP_REGION_USER,         OTP_USR_SLOT_WORDS,   OTP_USR_SLOT_WORDS,            otp_read_udata         },
+	{ "s-data",       OTP_REGION_ID_SEC,     OTP_REGION_SECURE,       0,                    OTP_SEC_REGION_SIZE,           otp_read_sdata         },
+	{ "cptra",        OTP_REGION_ID_CAL,     OTP_REGION_CALIPTRA,     0,                    OTP_CAL_REGION_SIZE,           otp_read_cptra         },
+};
+
+static int do_otpreprog_ecc(int argc, char *const argv[])
+{
+	int ecc_en = 0;
+	int nconfirm = 0;
+	int filter_ecc_id = -1;
+	const char *filter_name = NULL;
+	int ret;
+
+	for (int i = 1; i < argc; i++) {
+		if (!strcmp(argv[i], "o")) {
+			nconfirm = 1;
+		} else {
+			uint32_t id;
+
+			if (filter_ecc_id >= 0 || otp_ecc_policy_region_id(argv[i], &id))
+				return CMD_RET_USAGE;
+			filter_ecc_id = (int)id;
+			filter_name = argv[i];
+		}
+	}
+	if (argc > 3)
+		return CMD_RET_USAGE;
+
+	/* Step 1: check global ECC */
+	ret = ioctl(info_cb.otp_fd, ASPEED_OTP_GET_ECC, &ecc_en);
+	if (ret) {
+		printf("Failed to get ECC status\n");
+		return CMD_RET_FAILURE;
+	}
+
+	if (ecc_en == OTP_ECC_ENABLE) {
+		printf("Global ECC is already enabled\n");
+		return CMD_RET_SUCCESS;
+	}
+
+	printf("Global ECC is disabled\n");
+
+	if (!nconfirm) {
+		if (filter_ecc_id >= 0)
+			printf("This will re-program the '%s' OTP region with ECC.\n", filter_name);
+		else
+			printf("This will re-program all ECC-capable OTP regions and permanently enable global ECC.\n");
+		printf("type \"YES\" (no quotes) to continue:\n");
+		if (!confirm_yesno()) {
+			printf("Aborting\n");
+			return CMD_RET_FAILURE;
+		}
+	}
+
+	/* Step 2: read all regions before enabling ECC policy (raw read, no ECC checking) */
+	uint16_t *bufs[ARRAY_SIZE(reprog_ecc_tbl)] = {};
+
+	/* Verify per-region ECC is disabled so reads are raw (no ECC checking) */
+	for (int i = 0; i < (int)ARRAY_SIZE(reprog_ecc_tbl); i++) {
+		uint32_t ecc_id = reprog_ecc_tbl[i].ecc_id;
+		uint32_t pol_en, pol_supported;
+		bool already_checked = false;
+
+		if (filter_ecc_id >= 0 && (int)ecc_id != filter_ecc_id)
+			continue;
+
+		for (int j = 0; j < i; j++) {
+			if (reprog_ecc_tbl[j].ecc_id == ecc_id) {
+				already_checked = true;
+				break;
+			}
+		}
+		if (already_checked)
+			continue;
+
+		if (otp_get_ecc_policy(ecc_id, &pol_en, &pol_supported)) {
+			printf("Failed to get ECC policy for '%s'\n", reprog_ecc_tbl[i].name);
+			return CMD_RET_FAILURE;
+		}
+		if (pol_en) {
+			printf("ECC policy already enabled for '%s' (region %u), cannot do raw read\n",
+			       reprog_ecc_tbl[i].name, ecc_id);
+			return CMD_RET_FAILURE;
+		}
+	}
+
+	printf("Reading all regions (raw, ECC disabled)...\n");
+	for (int i = 0; i < (int)ARRAY_SIZE(reprog_ecc_tbl); i++) {
+		const struct reprog_ecc_entry *r = &reprog_ecc_tbl[i];
+
+		if (filter_ecc_id >= 0 && (int)r->ecc_id != filter_ecc_id)
+			continue;
+
+		bufs[i] = calloc(r->n_words, sizeof(uint16_t));
+		if (!bufs[i]) {
+			printf("Out of memory\n");
+			ret = CMD_RET_FAILURE;
+			goto free_bufs;
+		}
+		for (uint32_t w = 0; w < r->n_words; w++) {
+			uint32_t addr = r->word_offset + w;
+			uint16_t val = 0;
+
+			if (r->read_fn(addr, &val) && errno < OTP_CMD_ERR_BASE) {
+				printf("  Read failed at '%s' offset 0x%x: %s\n",
+				       r->name, addr, otp_cmd_errno_str(errno));
+				ret = CMD_RET_FAILURE;
+				goto free_bufs;
+			}
+			bufs[i][w] = val;
+		}
+	}
+
+	/* Step 3: enable per-region ECC policy */
+	printf("Enabling per-region ECC policy...\n");
+	for (int i = 0; i < (int)ARRAY_SIZE(reprog_ecc_tbl); i++) {
+		uint32_t ecc_id = reprog_ecc_tbl[i].ecc_id;
+		bool already_set = false;
+
+		if (filter_ecc_id >= 0 && (int)ecc_id != filter_ecc_id)
+			continue;
+
+		for (int j = 0; j < i; j++) {
+			if (reprog_ecc_tbl[j].ecc_id == ecc_id) {
+				already_set = true;
+				break;
+			}
+		}
+		if (already_set)
+			continue;
+
+		ret = otp_set_ecc_policy(ecc_id, OTP_ECC_ENABLE);
+		if (ret) {
+			printf("Failed to enable ECC for '%s': %s\n",
+			       reprog_ecc_tbl[i].name, otp_cmd_errno_str(errno));
+			ret = CMD_RET_FAILURE;
+			goto free_bufs;
+		}
+	}
+
+	/* Step 4: re-program each region so HW computes and burns ECC bits */
+	for (int i = 0; i < (int)ARRAY_SIZE(reprog_ecc_tbl); i++) {
+		const struct reprog_ecc_entry *r = &reprog_ecc_tbl[i];
+
+		if (filter_ecc_id >= 0 && (int)r->ecc_id != filter_ecc_id)
+			continue;
+
+		printf("Re-programming '%s' (word_offset=0x%x, n_words=%u)...\n",
+		       r->name, r->word_offset, r->n_words);
+		for (uint32_t w = 0; w < r->n_words; w++) {
+			uint32_t addr = r->word_offset + w;
+			uint16_t val = bufs[i][w];
+
+			if (!val)
+				continue;
+			// printf("  prog '%s' offset 0x%x = 0x%04x\n", r->name, addr, val);
+			ret = otp_prog_data(r->mode, addr, 0, val, 1, false);
+			if (ret) {
+				printf("  Prog failed at '%s' offset 0x%x: %s\n",
+				       r->name, addr, otp_cmd_errno_str(errno));
+				ret = CMD_RET_FAILURE;
+				goto free_bufs;
+			}
+		}
+		printf("  Done\n");
+	}
+
+	/* Step 5: burn global ECC (only when re-programming all regions) */
+	if (filter_ecc_id >= 0) {
+		printf("Skipping global ECC enable (single-region reprog)\n");
+		ret = CMD_RET_SUCCESS;
+		goto free_bufs;
+	}
+
+	printf("Enabling global ECC...\n");
+	ret = ioctl(info_cb.otp_fd, ASPEED_OTP_SET_ECC, OTP_ECC_ENABLE);
+	if (ret) {
+		printf("Failed to enable global ECC: %s\n", strerror(errno));
+		ret = CMD_RET_FAILURE;
+	} else {
+		printf("Global ECC enabled\n");
+		ret = CMD_RET_SUCCESS;
+	}
+
+free_bufs:
+	for (int i = 0; i < (int)ARRAY_SIZE(reprog_ecc_tbl); i++)
+		free(bufs[i]);
+	return ret;
+}
+
+static int otp_screen_read_all(uint16_t *buf, bool *ok, int n_words)
+{
+	for (int i = 0; i < n_words; i++) {
+		struct otp_read rdata = {
+			.offset = i,
+			.len    = 1,
+			.data   = (uint8_t *)&buf[i],
+		};
+		int rc = ioctl(info_cb.otp_fd, ASPEED_OTP_READ_DATA, &rdata);
+
+		if (rc) {
+			if (errno >= OTP_CMD_ERR_BASE) {
+				/* any OTP-specific error: treat as unreadable, skip */
+				buf[i] = 0xffff;
+				ok[i] = false;
+			} else {
+				printf("OTP read failed at addr 0x%x: %s\n",
+				       i, otp_cmd_errno_str(errno));
+				return rc;
+			}
+		} else {
+			ok[i] = true;
+		}
+	}
+	return 0;
+}
+
+/*
+ * otp screen              -- normal read -> margin read (IREF=OTP_SCREEN_IREF) -> compare
+ * otp screen <golden.bin> -- golden binary -> margin read -> compare
+ *
+ * The timing register (OTP_DAP_RQ_OFFSET) is set via /dev/mem before each read
+ * phase and restored afterwards.  Bits that differ between the reference and the
+ * margin read are printed individually; the total error count is shown at the end.
+ */
+static int do_otpscreen(int argc, char *const argv[])
+{
+	int n_words = SW_PUF_REGION_END_ADDR;
+	uint16_t *normal_buf = NULL, *margin_buf = NULL, *golden_buf = NULL;
+	bool *ok_normal = NULL, *ok_margin = NULL;
+	void *mmap_ptr = MAP_FAILED;
+	int mem_fd = -1;
+	int ret = CMD_RET_FAILURE;
+	volatile uint32_t *timing_reg;
+	uint32_t saved_timing;
+	int total_err = 0;
+	int total_ones = 0;
+
+	if (argc != 1 && argc != 2)
+		return CMD_RET_USAGE;
+
+	normal_buf = malloc(n_words * sizeof(uint16_t));
+	margin_buf = malloc(n_words * sizeof(uint16_t));
+	ok_normal  = malloc(n_words * sizeof(bool));
+	ok_margin  = malloc(n_words * sizeof(bool));
+	if (!normal_buf || !margin_buf || !ok_normal || !ok_margin) {
+		printf("malloc failed\n");
+		goto out;
+	}
+
+	/* Map OTP register block for timing control */
+	mem_fd = open("/dev/mem", O_RDWR | O_SYNC);
+	if (mem_fd < 0) {
+		printf("Failed to open /dev/mem: %s\n", strerror(errno));
+		goto out;
+	}
+
+	mmap_ptr = mmap(NULL, OTP_REG_MAP_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED,
+			mem_fd, OTP_PHYS_BASE);
+	if (mmap_ptr == MAP_FAILED) {
+		printf("mmap failed: %s\n", strerror(errno));
+		goto out;
+	}
+
+	timing_reg   = (volatile uint32_t *)((uint8_t *)mmap_ptr + OTP_DAP_RQ_OFFSET);
+	saved_timing = *timing_reg;
+
+	/* --- Normal read phase --- */
+	if (otp_screen_read_all(normal_buf, ok_normal, n_words))
+		goto out;
+
+	/* --- Margin read phase (IREF = OTP_SCREEN_IREF) --- */
+	printf("Margin read (IREF=0x%x, DAP_RQ=0x%08x)...\n",
+	       OTP_SCREEN_IREF, OTP_MARGIN_TIMING);
+	*timing_reg = OTP_MARGIN_TIMING;
+	int margin_rc = otp_screen_read_all(margin_buf, ok_margin, n_words);
+
+	*timing_reg = saved_timing;
+
+	if (margin_rc)
+		goto out;
+
+	/* --- Load golden binary if provided --- */
+	if (argc == 2) {
+		FILE *fd = fopen(argv[1], "rb");
+
+		if (!fd) {
+			printf("Failed to open golden file '%s': %s\n", argv[1], strerror(errno));
+			goto out;
+		}
+		golden_buf = malloc(n_words * sizeof(uint16_t));
+		if (!golden_buf) {
+			fclose(fd);
+			printf("malloc failed\n");
+			goto out;
+		}
+		size_t got = fread(golden_buf, sizeof(uint16_t), n_words, fd);
+
+		fclose(fd);
+		if ((int)got != n_words) {
+			printf("Golden file too short: got %zu words, need %d\n", got, n_words);
+			goto out;
+		}
+	}
+
+	/* --- Compare --- */
+	const uint16_t *ref      = golden_buf ? golden_buf : normal_buf;
+	const bool     *ok_ref   = golden_buf ? ok_margin  : ok_normal;
+	const char     *ref_name = golden_buf ? "golden"   : "normal";
+
+	printf("\n=== OTP screening: %s vs margin (IREF=0x%x) ===\n",
+	       ref_name, OTP_SCREEN_IREF);
+
+	for (int i = 0; i < n_words; i++) {
+		uint16_t diff;
+
+		if (!ok_ref[i] || !ok_margin[i])
+			continue;
+
+		total_ones += __builtin_popcount(ref[i]);
+
+		diff = ref[i] ^ margin_buf[i];
+		if (!diff)
+			continue;
+
+		for (int bit = 0; bit < 16; bit++) {
+			if (!(diff & (1u << bit)))
+				continue;
+			printf("  word_addr=0x%04x  byte_offset=0x%05x  bit=%-2d"
+			       "  %s=0x%04x  margin=0x%04x\n",
+			       i, i * 2, bit, ref_name, ref[i], margin_buf[i]);
+			total_err++;
+		}
+	}
+	printf("\nTotal scanned bits (=1): %d\n", total_ones);
+	printf("Total error bits:        %d\n", total_err);
+	ret = CMD_RET_SUCCESS;
+
+out:
+	free(golden_buf);
+	if (mmap_ptr != MAP_FAILED)
+		munmap(mmap_ptr, OTP_REG_MAP_SIZE);
+	if (mem_fd >= 0)
+		close(mem_fd);
+	free(ok_margin);
+	free(ok_normal);
+	free(margin_buf);
+	free(normal_buf);
+	return ret;
+}
+
 static int do_otpinfo(int argc, char *const argv[])
 {
 	if (argc != 2 && argc != 3)
@@ -1874,14 +2244,16 @@ struct cmd_tbl {
 };
 
 static struct cmd_tbl cmd_otp[] = {
-	{ "version", 2, do_otpver   },
-	{ "read",    5, do_otpread  },
-	{ "prog",    3, do_otpprog  },
-	{ "pb",      7, do_otppb    },
-	{ "patch",   6, do_otppatch },
-	{ "ecc",     6, do_otpecc   },
-	{ "info",    3, do_otpinfo  },
-	{ "dump",    4, do_otpdump  }
+	{ "version", 2, do_otpver    },
+	{ "read",    5, do_otpread   },
+	{ "prog",    3, do_otpprog   },
+	{ "pb",      7, do_otppb     },
+	{ "patch",   6, do_otppatch  },
+	{ "ecc",     6, do_otpecc    },
+	{ "info",    3, do_otpinfo   },
+	{ "dump",    4, do_otpdump   },
+	{ "screen",     3, do_otpscreen     },
+	{ "reprog_ecc", 3, do_otpreprog_ecc },
 };
 
 static void usage(void)
@@ -1899,7 +2271,10 @@ static void usage(void)
 	       "\totp <dev> ecc status|enable|disable\n"
 	       "\totp <dev> ecc policy dump\n"
 	       "\totp <dev> ecc policy set rom|conf|strap-ext|u-data|s-data|cptra|puf enable|disable\n"
-	       "\totp <dev> dump <file> [--skip_locked_regions]\n");
+	       "\totp <dev> dump <file> [--skip_locked_regions]\n"
+	       "\totp <dev> screen\n"
+	       "\totp <dev> screen <golden.bin>\n"
+	       "\totp <dev> reprog_ecc [conf|strap-ext|u-data|s-data|cptra] [o]\n");
 }
 
 struct cmd_tbl *find_cmd_tbl(const char *cmd, struct cmd_tbl *table,

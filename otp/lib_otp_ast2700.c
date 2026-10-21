@@ -336,7 +336,7 @@ int otp_prog_data(int mode, int otp_w_offset, int bit_offset,
 			       bit_offset, value);
 		break;
 	case OTP_REGION_RBP:
-		otp_read_rbp(otp_w_offset, read);
+		// otp_read_rbp(otp_w_offset, read);
 
 		if (otp_w_offset >= SOC_HW_SVN_ADDR && otp_w_offset < CAL_FMC_HW_SVN_ADDR) {
 			prog_multi = true;
@@ -373,7 +373,7 @@ int otp_prog_data(int mode, int otp_w_offset, int bit_offset,
 
 		break;
 	case OTP_REGION_CONF:
-		otp_read_conf(otp_w_offset, read);
+		// otp_read_conf(otp_w_offset, read);
 		prog_address = CONF_REGION_START_ADDR + otp_w_offset;
 		if (debug)
 			printf("Program OTPCFG%d[0x%X] = 0x%x...\n", otp_w_offset,
@@ -387,35 +387,35 @@ int otp_prog_data(int mode, int otp_w_offset, int bit_offset,
 			       bit_offset, value);
 		break;
 	case OTP_REGION_STRAP_EXT:
-		otp_read_strap_ext(otp_w_offset, read);
+		// otp_read_strap_ext(otp_w_offset, read);
 		prog_address = STRAPEXT_REGION_START_ADDR + otp_w_offset;
 		if (debug)
 			printf("Program OTPSTRAPEXT%d[0x%X] = 0x%x...\n", otp_w_offset,
 			       bit_offset, value);
 		break;
 	case OTP_REGION_STRAP_EXT_VLD:
-		otp_read_strap_ext_vld(otp_w_offset, read);
+		// otp_read_strap_ext_vld(otp_w_offset, read);
 		prog_address = STRAPEXT_REGION_START_ADDR + 0x8 + otp_w_offset;
 		if (debug)
 			printf("Program OTPSTRAPEXT_VLD%d[0x%X] = 0x%x...\n", otp_w_offset,
 			       bit_offset, value);
 		break;
 	case OTP_REGION_USER:
-		otp_read_udata(otp_w_offset, read);
+		// otp_read_udata(otp_w_offset, read);
 		prog_address = USER_REGION_START_ADDR + otp_w_offset;
 		if (debug)
 			printf("Program OTPDATA%d[0x%X] = 0x%x...\n", otp_w_offset,
 			       bit_offset, value);
 		break;
 	case OTP_REGION_SECURE:
-		otp_read_sdata(otp_w_offset, read);
+		// otp_read_sdata(otp_w_offset, read);
 		prog_address = SEC_REGION_START_ADDR + otp_w_offset;
 		if (debug)
 			printf("Program OTPSEC%d[0x%X] = 0x%x...\n", otp_w_offset,
 			       bit_offset, value);
 		break;
 	case OTP_REGION_CALIPTRA:
-		otp_read_cptra(otp_w_offset, read);
+		// otp_read_cptra(otp_w_offset, read);
 		prog_address = CAL_REGION_START_ADDR + otp_w_offset;
 		if (debug)
 			printf("Program OTPCAL%d[0x%X] = 0x%x...\n", otp_w_offset,

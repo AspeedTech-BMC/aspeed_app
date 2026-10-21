@@ -57,6 +57,21 @@ struct otp_ecc_policy {
 	uint32_t ecc_supported;  /* GET: filled by driver, SET: ignored */
 };
 
+/*
+ * OTP DAP timing register (base + 0x530) controls cell read mode.
+ * Writing a value here before OTP_CMD_READ selects normal/margin read.
+ * Normal read: IREF=0x01 (bits[4:0]), VRR=0xe (bits[11:8]).
+ * Margin read: IREF adjusted to OTP_SCREEN_IREF; change to tune margin level.
+ */
+#define OTP_DAP_RQ_OFFSET		0x530
+#define OTP_NORMAL_TIMING		0x04096e01u
+#define OTP_SCREEN_IREF			0x0f
+#define OTP_MARGIN_TIMING		((OTP_NORMAL_TIMING & ~0x1Fu) | OTP_SCREEN_IREF)
+
+/* Physical base address for direct register access via /dev/mem */
+#define OTP_PHYS_BASE			0x14c07000u
+#define OTP_REG_MAP_SIZE		0x600u
+
 #define OTP_VER				"2.1.0"
 
 #define OTP_AST2700_A0			0

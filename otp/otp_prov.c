@@ -175,6 +175,10 @@ int lib_otp_prog_data(int mode, int offset, int w_count, uint16_t *input)
 	}
 
 	switch (mode) {
+	case OTP_REGION_STRAP:
+		prog_address = STRAP_REGION_START_ADDR + offset;
+		range = OTP_STRAP_REGION_SIZE;
+		break;
 	case OTP_REGION_CALIPTRA:
 		prog_address = CAL_REGION_START_ADDR + offset;
 		range = OTP_CAL_REGION_SIZE;
@@ -186,7 +190,8 @@ int lib_otp_prog_data(int mode, int offset, int w_count, uint16_t *input)
 		break;
 	default:
 		printf("mode %d is not supported\n", mode);
-		break;
+		rc = -EINVAL;
+		goto end;
 	}
 
 	if (offset + w_count > range) {

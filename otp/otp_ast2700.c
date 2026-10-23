@@ -1507,19 +1507,11 @@ static int do_otpreprog_ecc(int argc, char *const argv[])
 		}
 	}
 
-	/*
-	 * With a reference the command works on one region only and never burns
-	 * global ECC; --dry_run needs a reference.
-	 */
 	ref_mode = ref_path;
-	if (!ref_mode && dry_run)
+	if (dry_run && !ref_mode)
 		return CMD_RET_USAGE;
-	if (ref_mode && filter_ecc_id < 0) {
-		printf("--ref needs a region\n");
-		return CMD_RET_USAGE;
-	}
 
-	if (ref_mode) {
+	if (filter_ecc_id >= 0) {
 		bool has_entry = false;
 
 		for (int i = 0; i < (int)ARRAY_SIZE(reprog_ecc_tbl); i++) {
@@ -1530,7 +1522,9 @@ static int do_otpreprog_ecc(int argc, char *const argv[])
 			printf("Region '%s' cannot be re-programmed\n", filter_name);
 			return CMD_RET_FAILURE;
 		}
+	}
 
+	if (ref_mode) {
 		if (reprog_load_ref(ref_path, &ref, &ref_words)) {
 			ret = CMD_RET_FAILURE;
 			goto free_bufs;
@@ -1635,9 +1629,10 @@ static int do_otpreprog_ecc(int argc, char *const argv[])
 
 	/* Compare the raw read with the reference; nothing is programmed on a mismatch */
 	if (ref_mode) {
-		printf("Comparing '%s' with reference '%s'...\n", filter_name, ref_path);
+		printf("Comparing %s with reference '%s'...\n",
+		       filter_name ? filter_name : "all regions", ref_path);
 		for (int i = 0; i < (int)ARRAY_SIZE(reprog_ecc_tbl); i++) {
-			if ((int)reprog_ecc_tbl[i].ecc_id != filter_ecc_id)
+			if (filter_ecc_id >= 0 && (int)reprog_ecc_tbl[i].ecc_id != filter_ecc_id)
 				continue;
 
 			if (reprog_ecc_check_ref(&reprog_ecc_tbl[i], bufs[i], locked[i],
@@ -1719,6 +1714,23 @@ static int do_otpreprog_ecc(int argc, char *const argv[])
 	}
 
 	printf("Enabling global ECC...\n");
+
+	/*
+	 * The kernel driver no longer programs OTP 0x42e itself; do it here.
+	 * Bits 0 & 1 are the global ECC enable fuses. Program 3 times with
+	 * 3-second waits to ensure reliable cell programming.
+	 */
+	for (int i = 0; i < 3; i++) {
+		ret = otp_prog(0x42e, 0x0003);
+		if (ret) {
+			printf("Failed to program global ECC OTP bits (attempt %d/3)\n", i + 1);
+			ret = CMD_RET_FAILURE;
+			goto free_bufs;
+		}
+		if (i < 2)
+			sleep(3);
+	}
+
 	ret = ioctl(info_cb.otp_fd, ASPEED_OTP_SET_ECC, OTP_ECC_ENABLE);
 	if (ret) {
 		printf("Failed to enable global ECC: %s\n", strerror(errno));
@@ -2495,8 +2507,7 @@ static void usage(void)
 	       "\totp <dev> dump <file> [--skip_locked_regions]\n"
 	       "\totp <dev> screen\n"
 	       "\totp <dev> screen <golden.bin>\n"
-	       "\totp <dev> reprog_ecc [conf|strap-ext|u-data|s-data|cptra] [o]\n"
-	       "\totp <dev> reprog_ecc <region> --ref <verified_dump> [--dry_run] [o]\n");
+	       "\totp <dev> reprog_ecc [conf|strap-ext|u-data|s-data|cptra] [--ref <verified_dump>] [--dry_run] [o]\n");
 }
 
 struct cmd_tbl *find_cmd_tbl(const char *cmd, struct cmd_tbl *table,

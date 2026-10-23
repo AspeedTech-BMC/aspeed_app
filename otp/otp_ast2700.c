@@ -1331,17 +1331,169 @@ static const struct reprog_ecc_entry reprog_ecc_tbl[] = {
 	{ "cptra",        OTP_REGION_ID_CAL,     OTP_REGION_CALIPTRA,     0,                    OTP_CAL_REGION_SIZE,           otp_read_cptra         },
 };
 
+/*
+ * reprog_ecc --ref <verified_dump>
+ *
+ * The reference is an otp dump image that the caller has already verified
+ * (word N of the OTP is at byte offset 2 * N). A word is only re-programmed
+ * when the raw device read is identical to the reference.
+ *
+ * A word that cannot be read because it is locked (OTP_CMD_ERR_REGION_FAIL) is
+ * neither compared nor programmed; the locked ranges are reported so that the
+ * caller can check them. Any other read error fails the command.
+ */
+#define REPROG_REF_MAX_BYTES        0x10000
+#define REPROG_MISMATCH_PRINT_MAX   16
+
+/* Absolute OTP word address (= word index in an otp dump) of word w of entry r */
+static uint32_t reprog_ecc_abs_addr(const struct reprog_ecc_entry *r, uint32_t w)
+{
+	uint32_t off = r->word_offset + w;
+
+	switch (r->mode) {
+	case OTP_REGION_CONF:
+		return CONF_REGION_START_ADDR + off;
+	case OTP_REGION_STRAP_EXT:
+		return STRAPEXT_REGION_START_ADDR + off;
+	case OTP_REGION_STRAP_EXT_VLD:
+		return STRAPEXT_REGION_START_ADDR + 0x8 + off;
+	case OTP_REGION_USER:
+		return USER_REGION_START_ADDR + off;
+	case OTP_REGION_SECURE:
+		return SEC_REGION_START_ADDR + off;
+	case OTP_REGION_CALIPTRA:
+		return CAL_REGION_START_ADDR + off;
+	default:
+		return UINT32_MAX;
+	}
+}
+
+static int reprog_load_ref(const char *path, uint16_t **buf, size_t *n_words)
+{
+	FILE *fd = fopen(path, "rb");
+	long size;
+	size_t got;
+
+	if (!fd) {
+		printf("Failed to open reference file '%s': %s\n", path, strerror(errno));
+		return -1;
+	}
+	if (fseek(fd, 0, SEEK_END)) {
+		printf("Failed to get the size of reference file '%s'\n", path);
+		fclose(fd);
+		return -1;
+	}
+	size = ftell(fd);
+	if (size < 0 || fseek(fd, 0, SEEK_SET)) {
+		printf("Failed to get the size of reference file '%s'\n", path);
+		fclose(fd);
+		return -1;
+	}
+	if (size == 0 || (size & 1) || size > REPROG_REF_MAX_BYTES) {
+		printf("Reference file '%s' has an invalid size (%ld bytes)\n", path, size);
+		fclose(fd);
+		return -1;
+	}
+
+	*buf = malloc(size);
+	if (!*buf) {
+		printf("Out of memory\n");
+		fclose(fd);
+		return -1;
+	}
+	got = fread(*buf, 1, size, fd);
+	fclose(fd);
+	if (got != (size_t)size) {
+		printf("Failed to read reference file '%s'\n", path);
+		free(*buf);
+		*buf = NULL;
+		return -1;
+	}
+
+	*n_words = size / 2;
+	return 0;
+}
+
+/*
+ * Compare the raw read of table entry r (buf, locked) with the reference.
+ * Words that are locked or differ from the reference are cleared in buf so
+ * that they are never programmed. Returns -1 if the reference does not cover
+ * the entry, otherwise 0 with *mismatches increased by the number of differing
+ * words.
+ */
+static int reprog_ecc_check_ref(const struct reprog_ecc_entry *r, uint16_t *buf,
+				const bool *locked, const uint16_t *ref, size_t ref_words,
+				unsigned int *mismatches)
+{
+	unsigned int n_cmp = 0, n_lock = 0;
+	bool in_lock = false;
+	uint32_t lock_first = 0, lock_last = 0;
+
+	for (uint32_t w = 0; w < r->n_words; w++) {
+		uint32_t waddr = reprog_ecc_abs_addr(r, w);
+		bool bad = false;
+
+		if (waddr >= ref_words) {
+			printf("  Reference file is too short for '%s' (word 0x%x, reference has %zu words)\n",
+			       r->name, waddr, ref_words);
+			return -1;
+		}
+
+		if (locked[w]) {
+			n_lock++;
+		} else {
+			n_cmp++;
+			if (buf[w] != ref[waddr])
+				bad = true;
+		}
+
+		if (bad) {
+			if (*mismatches < REPROG_MISMATCH_PRINT_MAX)
+				printf("  MISMATCH '%s' word 0x%04x: device=0x%04x ref=0x%04x\n",
+				       r->name, waddr, buf[w], ref[waddr]);
+			(*mismatches)++;
+		}
+
+		if (locked[w] && in_lock && waddr == lock_last + 1) {
+			lock_last = waddr;
+		} else {
+			if (in_lock)
+				printf("  LOCKED '%s' words 0x%04x-0x%04x\n", r->name, lock_first, lock_last);
+			in_lock = locked[w];
+			lock_first = waddr;
+			lock_last = waddr;
+		}
+
+		if (locked[w] || bad)
+			buf[w] = 0;
+	}
+	if (in_lock)
+		printf("  LOCKED '%s' words 0x%04x-0x%04x\n", r->name, lock_first, lock_last);
+
+	printf("  '%s': compared %u, locked %u\n", r->name, n_cmp, n_lock);
+	return 0;
+}
+
 static int do_otpreprog_ecc(int argc, char *const argv[])
 {
 	int ecc_en = 0;
 	int nconfirm = 0;
 	int filter_ecc_id = -1;
 	const char *filter_name = NULL;
+	const char *ref_path = NULL;
+	bool ref_mode;
+	uint16_t *bufs[ARRAY_SIZE(reprog_ecc_tbl)] = {};
+	bool *locked[ARRAY_SIZE(reprog_ecc_tbl)] = {};
+	uint16_t *ref = NULL;
+	size_t ref_words = 0;
+	unsigned int mismatches = 0;
 	int ret;
 
 	for (int i = 1; i < argc; i++) {
 		if (!strcmp(argv[i], "o")) {
 			nconfirm = 1;
+		} else if (!strcmp(argv[i], "--ref") && i + 1 < argc && !ref_path) {
+			ref_path = argv[++i];
 		} else {
 			uint32_t id;
 
@@ -1351,19 +1503,47 @@ static int do_otpreprog_ecc(int argc, char *const argv[])
 			filter_name = argv[i];
 		}
 	}
-	if (argc > 3)
+
+	/*
+	 * With a reference the command works on one region only and never burns
+	 * global ECC.
+	 */
+	ref_mode = ref_path;
+	if (ref_mode && filter_ecc_id < 0) {
+		printf("--ref needs a region\n");
 		return CMD_RET_USAGE;
+	}
+
+	if (ref_mode) {
+		bool has_entry = false;
+
+		for (int i = 0; i < (int)ARRAY_SIZE(reprog_ecc_tbl); i++) {
+			if ((int)reprog_ecc_tbl[i].ecc_id == filter_ecc_id)
+				has_entry = true;
+		}
+		if (!has_entry) {
+			printf("Region '%s' cannot be re-programmed\n", filter_name);
+			return CMD_RET_FAILURE;
+		}
+
+		if (reprog_load_ref(ref_path, &ref, &ref_words)) {
+			ret = CMD_RET_FAILURE;
+			goto free_bufs;
+		}
+	}
 
 	/* Step 1: check global ECC */
 	ret = ioctl(info_cb.otp_fd, ASPEED_OTP_GET_ECC, &ecc_en);
 	if (ret) {
 		printf("Failed to get ECC status\n");
-		return CMD_RET_FAILURE;
+		ret = CMD_RET_FAILURE;
+		goto free_bufs;
 	}
 
 	if (ecc_en == OTP_ECC_ENABLE) {
 		printf("Global ECC is already enabled\n");
-		return CMD_RET_SUCCESS;
+		ret = CMD_RET_SUCCESS;
+		goto free_bufs;
 	}
 
 	printf("Global ECC is disabled\n");
@@ -1376,12 +1556,12 @@ static int do_otpreprog_ecc(int argc, char *const argv[])
 		printf("type \"YES\" (no quotes) to continue:\n");
 		if (!confirm_yesno()) {
 			printf("Aborting\n");
-			return CMD_RET_FAILURE;
+			ret = CMD_RET_FAILURE;
+			goto free_bufs;
 		}
 	}
 
 	/* Step 2: read all regions before enabling ECC policy (raw read, no ECC checking) */
-	uint16_t *bufs[ARRAY_SIZE(reprog_ecc_tbl)] = {};
 
 	/* Verify per-region ECC is disabled so reads are raw (no ECC checking) */
 	for (int i = 0; i < (int)ARRAY_SIZE(reprog_ecc_tbl); i++) {
@@ -1403,12 +1583,14 @@ static int do_otpreprog_ecc(int argc, char *const argv[])
 
 		if (otp_get_ecc_policy(ecc_id, &pol_en, &pol_supported)) {
 			printf("Failed to get ECC policy for '%s'\n", reprog_ecc_tbl[i].name);
-			return CMD_RET_FAILURE;
+			ret = CMD_RET_FAILURE;
+			goto free_bufs;
 		}
 		if (pol_en) {
 			printf("ECC policy already enabled for '%s' (region %u), cannot do raw read\n",
 			       reprog_ecc_tbl[i].name, ecc_id);
-			return CMD_RET_FAILURE;
+			ret = CMD_RET_FAILURE;
+			goto free_bufs;
 		}
 	}
 
@@ -1420,7 +1602,8 @@ static int do_otpreprog_ecc(int argc, char *const argv[])
 			continue;
 
 		bufs[i] = calloc(r->n_words, sizeof(uint16_t));
-		if (!bufs[i]) {
+		locked[i] = calloc(r->n_words, sizeof(bool));
+		if (!bufs[i] || !locked[i]) {
 			printf("Out of memory\n");
 			ret = CMD_RET_FAILURE;
 			goto free_bufs;
@@ -1429,13 +1612,39 @@ static int do_otpreprog_ecc(int argc, char *const argv[])
 			uint32_t addr = r->word_offset + w;
 			uint16_t val = 0;
 
-			if (r->read_fn(addr, &val) && errno < OTP_CMD_ERR_BASE) {
-				printf("  Read failed at '%s' offset 0x%x: %s\n",
-				       r->name, addr, otp_cmd_errno_str(errno));
+			if (r->read_fn(addr, &val)) {
+				if (ref_mode && errno == OTP_CMD_ERR_REGION_FAIL) {
+					/* locked word: not compared, not programmed */
+					locked[i][w] = true;
+					val = 0;
+				} else if (ref_mode || errno < OTP_CMD_ERR_BASE) {
+					printf("  Read failed at '%s' offset 0x%x: %s\n",
+					       r->name, addr, otp_cmd_errno_str(errno));
+					ret = CMD_RET_FAILURE;
+					goto free_bufs;
+				}
+			}
+			bufs[i][w] = val;
+		}
+	}
+
+	/* Compare the raw read with the reference; nothing is programmed on a mismatch */
+	if (ref_mode) {
+		printf("Comparing '%s' with reference '%s'...\n", filter_name, ref_path);
+		for (int i = 0; i < (int)ARRAY_SIZE(reprog_ecc_tbl); i++) {
+			if ((int)reprog_ecc_tbl[i].ecc_id != filter_ecc_id)
+				continue;
+
+			if (reprog_ecc_check_ref(&reprog_ecc_tbl[i], bufs[i], locked[i],
+						 ref, ref_words, &mismatches)) {
 				ret = CMD_RET_FAILURE;
 				goto free_bufs;
 			}
-			bufs[i][w] = val;
+		}
+		if (mismatches) {
+			printf("Reference mismatch on %u word(s), nothing programmed\n", mismatches);
+			ret = CMD_RET_FAILURE;
+			goto free_bufs;
 		}
 	}
 
@@ -1481,7 +1690,6 @@ static int do_otpreprog_ecc(int argc, char *const argv[])
 
 			if (!val)
 				continue;
-			// printf("  prog '%s' offset 0x%x = 0x%04x\n", r->name, addr, val);
 			ret = otp_prog_data(r->mode, addr, 0, val, 1, false);
 			if (ret) {
 				printf("  Prog failed at '%s' offset 0x%x: %s\n",
@@ -1511,8 +1719,11 @@ static int do_otpreprog_ecc(int argc, char *const argv[])
 	}
 
 free_bufs:
-	for (int i = 0; i < (int)ARRAY_SIZE(reprog_ecc_tbl); i++)
+	for (int i = 0; i < (int)ARRAY_SIZE(reprog_ecc_tbl); i++) {
 		free(bufs[i]);
+		free(locked[i]);
+	}
+	free(ref);
 	return ret;
 }
 
@@ -2253,7 +2464,7 @@ static struct cmd_tbl cmd_otp[] = {
 	{ "info",    3, do_otpinfo   },
 	{ "dump",    4, do_otpdump   },
 	{ "screen",     3, do_otpscreen     },
-	{ "reprog_ecc", 3, do_otpreprog_ecc },
+	{ "reprog_ecc", 8, do_otpreprog_ecc },
 };
 
 static void usage(void)
@@ -2274,7 +2485,8 @@ static void usage(void)
 	       "\totp <dev> dump <file> [--skip_locked_regions]\n"
 	       "\totp <dev> screen\n"
 	       "\totp <dev> screen <golden.bin>\n"
-	       "\totp <dev> reprog_ecc [conf|strap-ext|u-data|s-data|cptra] [o]\n");
+	       "\totp <dev> reprog_ecc [conf|strap-ext|u-data|s-data|cptra] [o]\n"
+	       "\totp <dev> reprog_ecc <region> --ref <verified_dump> [o]\n");
 }
 
 struct cmd_tbl *find_cmd_tbl(const char *cmd, struct cmd_tbl *table,
@@ -2301,7 +2513,7 @@ int main(int argc, char *argv[])
 	int ret;
 	uint16_t otp_conf0;
 
-	if (argc < 3 || argc > 8) {
+	if (argc < 3 || argc > 10) {
 		ret = OTP_USAGE;
 		goto end;
 	}

@@ -1481,6 +1481,7 @@ static int do_otpreprog_ecc(int argc, char *const argv[])
 	int filter_ecc_id = -1;
 	const char *filter_name = NULL;
 	const char *ref_path = NULL;
+	bool dry_run = false;
 	bool ref_mode;
 	uint16_t *bufs[ARRAY_SIZE(reprog_ecc_tbl)] = {};
 	bool *locked[ARRAY_SIZE(reprog_ecc_tbl)] = {};
@@ -1494,6 +1495,8 @@ static int do_otpreprog_ecc(int argc, char *const argv[])
 			nconfirm = 1;
 		} else if (!strcmp(argv[i], "--ref") && i + 1 < argc && !ref_path) {
 			ref_path = argv[++i];
+		} else if (!strcmp(argv[i], "--dry_run")) {
+			dry_run = true;
 		} else {
 			uint32_t id;
 
@@ -1506,9 +1509,11 @@ static int do_otpreprog_ecc(int argc, char *const argv[])
 
 	/*
 	 * With a reference the command works on one region only and never burns
-	 * global ECC.
+	 * global ECC; --dry_run needs a reference.
 	 */
 	ref_mode = ref_path;
+	if (!ref_mode && dry_run)
+		return CMD_RET_USAGE;
 	if (ref_mode && filter_ecc_id < 0) {
 		printf("--ref needs a region\n");
 		return CMD_RET_USAGE;
@@ -1548,7 +1553,7 @@ static int do_otpreprog_ecc(int argc, char *const argv[])
 
 	printf("Global ECC is disabled\n");
 
-	if (!nconfirm) {
+	if (!nconfirm && !dry_run) {
 		if (filter_ecc_id >= 0)
 			printf("This will re-program the '%s' OTP region with ECC.\n", filter_name);
 		else
@@ -1644,6 +1649,11 @@ static int do_otpreprog_ecc(int argc, char *const argv[])
 		if (mismatches) {
 			printf("Reference mismatch on %u word(s), nothing programmed\n", mismatches);
 			ret = CMD_RET_FAILURE;
+			goto free_bufs;
+		}
+		if (dry_run) {
+			printf("Dry run: reference matches, ECC policy unchanged and nothing programmed\n");
+			ret = CMD_RET_SUCCESS;
 			goto free_bufs;
 		}
 	}
@@ -2486,7 +2496,7 @@ static void usage(void)
 	       "\totp <dev> screen\n"
 	       "\totp <dev> screen <golden.bin>\n"
 	       "\totp <dev> reprog_ecc [conf|strap-ext|u-data|s-data|cptra] [o]\n"
-	       "\totp <dev> reprog_ecc <region> --ref <verified_dump> [o]\n");
+	       "\totp <dev> reprog_ecc <region> --ref <verified_dump> [--dry_run] [o]\n");
 }
 
 struct cmd_tbl *find_cmd_tbl(const char *cmd, struct cmd_tbl *table,

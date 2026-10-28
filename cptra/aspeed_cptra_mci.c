@@ -328,7 +328,7 @@ struct cptra_mci_mldsa_verify_resp {
 	struct cptra_mci_mbox_resp_hdr hdr;
 };
 
-#define CPTRA_MCI_DEVICE_CAPS_SIZE		32
+#define CPTRA_MCI_DEVICE_CAPS_SIZE		36
 
 struct cptra_mci_device_caps_req {
 	struct cptra_mci_mbox_req_hdr hdr;
@@ -365,7 +365,7 @@ struct cptra_mci_clear_log_resp {
 	struct cptra_mci_mbox_resp_hdr hdr;
 };
 
-#define CPTRA_MCI_AUTH_CHALLENGE_SIZE		32
+#define CPTRA_MCI_AUTH_CHALLENGE_SIZE		48
 
 struct cptra_mci_auth_cmd_challenge_req {
 	struct cptra_mci_mbox_req_hdr hdr;
@@ -2467,7 +2467,6 @@ static int mci_test_fw_version(void)
 	static const enum cptra_mci_fw_index indexes[] = {
 		CPTRA_MCI_FW_INDEX_CALIPTRA_CORE,
 		CPTRA_MCI_FW_INDEX_MCU_RUNTIME,
-		CPTRA_MCI_FW_INDEX_SOC,
 	};
 	char version[CPTRA_MCI_MAX_FW_VERSION_STR_LEN + 1];
 	size_t i;

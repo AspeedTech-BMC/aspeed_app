@@ -9,7 +9,7 @@ ifeq ($(ARCH),arm)
 	OBJS = otp_ast2600.o
 endif
 ifeq ($(ARCH),arm64)
-	OBJS      = otp_ast2700.o lib_otp_ast2700.o
+	OBJS      = otp_ast2700.o lib_otp_ast2700.o otp_ipc.o
 	OBJS_2705 = otp_ast2705.o
 	SHARED_LIB = lib_otp.so
 endif
@@ -31,7 +31,7 @@ $(EXE): $(OBJS) $(SHARED_LIB)
 	$(CC) $(OBJS) -o $@ $(CFLAGS)
 
 ifeq ($(ARCH),arm64)
-$(SHARED_LIB): lib_otp_ast2700.c otp_prov.c
+$(SHARED_LIB): lib_otp_ast2700.c otp_prov.c otp_ipc.c
 	$(CC) -shared -fPIC $^ -o $@ -lcrypto -lssl
 
 $(EXE_2705): $(OBJS_2705)
@@ -39,7 +39,8 @@ $(EXE_2705): $(OBJS_2705)
 endif
 
 clean:
-	rm -f $(EXE) $(EXE_2705) $(OBJS) $(OBJS_2705) $(SHARED_LIB)
+	rm -f $(EXE) $(EXE_2705) lib_otp.so \
+		otp_ast2600.o otp_ast2700.o lib_otp_ast2700.o otp_ipc.o otp_ast2705.o
 
 install:
 	cp $(EXE) $(INSTALL_DIR)

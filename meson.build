@@ -46,7 +46,7 @@ executable('svf', ['svf/main.c', 'svf/ast-jtag.c', 'svf/svf.c'], install: true)
 # otp
 platform = get_option('otp-platform')
 if platform == 'ast2700'
-  executable('otp', ['otp/otp_ast2700.c', 'otp/lib_otp_ast2700.c', 'otp/otp_prov.c'],
+  executable('otp', ['otp/otp_ast2700.c', 'otp/lib_otp_ast2700.c', 'otp/otp_prov.c', 'otp/otp_ipc.c'],
       install: true, dependencies: dependency('openssl'),
       include_directories: include_directories('otp'))
 elif platform == 'ast2705'

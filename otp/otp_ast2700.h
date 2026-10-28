@@ -72,6 +72,16 @@ struct otp_ecc_policy {
 #define OTP_PHYS_BASE			0x14c07000u
 #define OTP_REG_MAP_SIZE		0x600u
 
+/*
+ * Values for otp_set_read_mode()/otp_ipc_set_read_mode(). Must stay in
+ * lockstep with bootmcu's enum otp_read_mode
+ * (zephyr/include/zephyr/drivers/misc/aspeed/otp.h).
+ */
+enum otp_read_mode {
+	OTP_READ_MODE_NORMAL = 0,
+	OTP_READ_MODE_MARGIN = 1,
+};
+
 #define OTP_VER				"2.1.0"
 
 #define OTP_AST2700_A0			0
@@ -299,6 +309,8 @@ uint32_t chip_version(void);
 int confirm_yesno(void);
 void buf_print(uint8_t *buf, int len);
 
+int otp_read_raw(uint32_t offset, uint16_t *data);
+int otp_read_raw_multi(uint32_t offset, uint16_t *data, int num);
 int otp_read_rom(uint32_t offset, uint16_t *data);
 int otp_read_rbp(uint32_t offset, uint16_t *data);
 int otp_read_conf(uint32_t offset, uint16_t *data);
@@ -310,7 +322,9 @@ int otp_read_sdata(uint32_t offset, uint16_t *data);
 int otp_read_sdata_multi(uint32_t offset, uint16_t *data, int num);
 int otp_read_cptra(uint32_t offset, uint16_t *data);
 int otp_read_swpuf(uint32_t offset, uint16_t *data);
+int otp_set_read_mode(uint32_t mode);
 
+int otp_ecc_get_status(int *ecc_en);
 int otp_ecc_ctrl(bool enable);
 int otp_get_ecc_policy(uint32_t region, uint32_t *ecc_en, uint32_t *ecc_supported);
 int otp_set_ecc_policy(uint32_t region, uint32_t ecc_en);

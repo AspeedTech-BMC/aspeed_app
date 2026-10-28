@@ -11,6 +11,7 @@
 #include <errno.h>
 #include "otp_ast2700.h"
 #include "otp_info_ast2700.h"
+#include "otp_ipc.h"
 
 bool lib_otp_is_init;
 
@@ -18,11 +19,23 @@ int lib_otp_init(void)
 {
 	uint32_t ver;
 
+	/*
+	 * /dev/aspeed-otp may legitimately be absent: once bootmcu locks OTP
+	 * master access to itself, the kernel's own OTP driver probe fails
+	 * too, so there's nothing to open here. Don't bail out yet - try the
+	 * IPC path below before giving up.
+	 */
 	info_cb.otp_fd = open("/dev/aspeed-otp", O_RDWR);
-	if (info_cb.otp_fd == -1) {
-		printf("Can't open /dev/aspeed-otp, please install driver!!\n");
+
+	otp_ipc_probe();
+
+	if (info_cb.otp_fd == -1 && !otp_ipc_available()) {
+		printf("Can't open /dev/aspeed-otp and no BOOTMCU OTP IPC channel found, "
+		       "please install driver or check bootmcu firmware!!\n");
 		return -EIO;
 	}
+
+	printf("OTP driver: %s\n", info_cb.otp_fd >= 0 ? "native (CA35 direct)" : "IPC (via BOOTMCU)");
 
 	ver = chip_version();
 	switch (ver) {

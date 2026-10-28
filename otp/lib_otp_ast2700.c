@@ -3,12 +3,17 @@
  * Copyright 2024 Aspeed Technology Inc.
  */
 
+#include <errno.h>
+#include <fcntl.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <sys/ioctl.h>
+#include <sys/mman.h>
 #include <string.h>
+#include <unistd.h>
 #include <openssl/evp.h>
 #include "otp_ast2700.h"
+#include "otp_ipc.h"
 
 struct otp_info_cb info_cb;
 
@@ -18,12 +23,24 @@ uint32_t chip_version(void)
 	uint32_t revid0, revid1;
 	int ret;
 
-	ret = ioctl(info_cb.otp_fd, ASPEED_OTP_GET_REVID, &revid);
-	if (ret)
-		goto end;
+	if (info_cb.otp_fd >= 0) {
+		ret = ioctl(info_cb.otp_fd, ASPEED_OTP_GET_REVID, &revid);
+		if (ret)
+			goto end;
 
-	revid0 = revid.revid0;
-	revid1 = revid.revid1;
+		revid0 = revid.revid0;
+		revid1 = revid.revid1;
+	} else {
+		/*
+		 * /dev/aspeed-otp isn't available (bootmcu has locked CA35
+		 * out of OTP), so ask bootmcu for the raw SCU0/SCU1 revision
+		 * ID registers over IPC instead - this reuses the exact same
+		 * ID0/ID1 comparison table below for both paths, rather than
+		 * trusting bootmcu's own (separate) decode.
+		 */
+		if (otp_ipc_get_revid(&revid0, &revid1))
+			goto end;
+	}
 
 	if (revid0 == ID0_AST2700A0 && revid1 == ID1_AST2700A0) {
 		/* AST2700-A0 */
@@ -82,15 +99,50 @@ void buf_print(uint8_t *buf, int len)
 	printf("\n");
 }
 
+static int otp_ipc_status_to_errno(int status)
+{
+	return status > 0 ? status : -status;
+}
+
+/*
+ * Direct CA35 register access via /dev/aspeed-otp takes priority whenever
+ * it's open; the IPC mailbox is only used as a fallback for when bootmcu
+ * has locked CA35 out of OTP (so /dev/aspeed-otp never probed).
+ */
+static bool otp_use_ipc(void)
+{
+	return info_cb.otp_fd < 0 && otp_ipc_available();
+}
+
 static int otp_read(uint32_t offset, uint16_t *data)
 {
 	struct otp_read rdata;
+	int status;
+
+	if (otp_use_ipc()) {
+		status = otp_ipc_read(offset, 1, data);
+		if (status) {
+			errno = otp_ipc_status_to_errno(status);
+			return -1;
+		}
+		return 0;
+	}
 
 	rdata.offset = offset;
 	rdata.len = 1;
 	rdata.data = (uint8_t *)data;
 
 	return ioctl(info_cb.otp_fd, ASPEED_OTP_READ_DATA, &rdata);
+}
+
+/*
+ * Exposes otp_read() to callers (e.g. do_otpdump()) that need raw
+ * word-at-a-time reads routed through the same CA35-direct/IPC dispatch
+ * as the region helpers below, without duplicating that dispatch logic.
+ */
+int otp_read_raw(uint32_t offset, uint16_t *data)
+{
+	return otp_read(offset, data);
 }
 
 int otp_read_rom(uint32_t offset, uint16_t *data)
@@ -133,9 +185,74 @@ int otp_read_sdata(uint32_t offset, uint16_t *data)
 	return otp_read(offset + SEC_REGION_START_ADDR, data);
 }
 
+/*
+ * The IPC mailbox message can only carry OTP_IPC_READ_MAX_WORDS words per
+ * round trip (the direct ioctl path has no such limit), so walk the region
+ * in chunks when going over IPC.
+ */
+static int otp_ipc_read_multi(uint32_t addr, uint16_t *data, int num)
+{
+	int remaining = num;
+	int status;
+
+	while (remaining > 0) {
+		int chunk = remaining > OTP_IPC_READ_MAX_WORDS ?
+			    OTP_IPC_READ_MAX_WORDS : remaining;
+
+		status = otp_ipc_read(addr, chunk, data);
+		if (status)
+			return status;
+
+		addr += chunk;
+		data += chunk;
+		remaining -= chunk;
+	}
+
+	return 0;
+}
+
+/*
+ * Raw multi-word read at an absolute OTP word address. Both the native
+ * ioctl and the IPC path fail a batch read all-or-nothing - a protected
+ * word anywhere in the range loses the whole batch, not just that word -
+ * so callers that need to pinpoint exactly which word failed (e.g.
+ * do_otpdump()'s --skip_locked_regions) should retry a failed batch
+ * themselves via otp_read_raw() one word at a time.
+ */
+int otp_read_raw_multi(uint32_t offset, uint16_t *data, int num)
+{
+	struct otp_read rdata;
+	int status;
+
+	if (otp_use_ipc()) {
+		status = otp_ipc_read_multi(offset, data, num);
+		if (status) {
+			errno = otp_ipc_status_to_errno(status);
+			return -1;
+		}
+		return 0;
+	}
+
+	rdata.offset = offset;
+	rdata.len = num;
+	rdata.data = (uint8_t *)data;
+
+	return ioctl(info_cb.otp_fd, ASPEED_OTP_READ_DATA, &rdata);
+}
+
 int otp_read_sdata_multi(uint32_t offset, uint16_t *data, int num)
 {
 	struct otp_read rdata;
+	int status;
+
+	if (otp_use_ipc()) {
+		status = otp_ipc_read_multi(offset + SEC_REGION_START_ADDR, data, num);
+		if (status) {
+			errno = otp_ipc_status_to_errno(status);
+			return -1;
+		}
+		return 0;
+	}
 
 	rdata.offset = offset + SEC_REGION_START_ADDR;
 	rdata.len = num;
@@ -154,12 +271,58 @@ int otp_read_swpuf(uint32_t offset, uint16_t *data)
 	return otp_read(offset + SW_PUF_REGION_START_ADDR, data);
 }
 
+/*
+ * Switches the OTP cell read reference current between normal and margin
+ * mode (enum otp_read_mode) for margin-screening diagnostics (otp screen).
+ * Affects every subsequent otp_read*() call until switched back. Native:
+ * direct /dev/mem write to the DAP timing register. IPC: ask bootmcu to do
+ * the same write on its own OTP controller instance.
+ */
+int otp_set_read_mode(uint32_t mode)
+{
+	volatile uint32_t *timing_reg;
+	void *mmap_ptr;
+	int mem_fd;
+
+	if (otp_use_ipc())
+		return otp_ipc_set_read_mode(mode);
+
+	mem_fd = open("/dev/mem", O_RDWR | O_SYNC);
+	if (mem_fd < 0)
+		return -1;
+
+	mmap_ptr = mmap(NULL, OTP_REG_MAP_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED,
+			mem_fd, OTP_PHYS_BASE);
+	close(mem_fd);
+	if (mmap_ptr == MAP_FAILED)
+		return -1;
+
+	timing_reg = (volatile uint32_t *)((uint8_t *)mmap_ptr + OTP_DAP_RQ_OFFSET);
+	*timing_reg = (mode == OTP_READ_MODE_MARGIN) ? OTP_MARGIN_TIMING : OTP_NORMAL_TIMING;
+
+	munmap(mmap_ptr, OTP_REG_MAP_SIZE);
+
+	return 0;
+}
+
+int otp_ecc_get_status(int *ecc_en)
+{
+	if (otp_use_ipc())
+		return otp_ipc_ecc_get_status(ecc_en);
+
+	return ioctl(info_cb.otp_fd, ASPEED_OTP_GET_ECC, ecc_en);
+}
+
 int otp_ecc_ctrl(bool enable)
 {
 	int ret;
 
-	ret = ioctl(info_cb.otp_fd, ASPEED_OTP_SET_ECC,
-		    enable ? OTP_ECC_ENABLE : OTP_ECC_DISABLE);
+	if (otp_use_ipc())
+		ret = otp_ipc_ecc_set_enable(enable ? 1 : 0);
+	else
+		ret = ioctl(info_cb.otp_fd, ASPEED_OTP_SET_ECC,
+			    enable ? OTP_ECC_ENABLE : OTP_ECC_DISABLE);
+
 	if (ret)
 		printf("OTP ECC %s failed\n", enable ? "enable" : "disable");
 
@@ -170,6 +333,15 @@ int otp_get_ecc_policy(uint32_t region, uint32_t *ecc_en, uint32_t *ecc_supporte
 {
 	struct otp_ecc_policy policy;
 	int ret;
+
+	if (otp_use_ipc()) {
+		ret = otp_ipc_ecc_get_policy(region, ecc_en, ecc_supported);
+		if (ret) {
+			errno = otp_ipc_status_to_errno(ret);
+			return -1;
+		}
+		return 0;
+	}
 
 	policy.region = region;
 
@@ -186,6 +358,16 @@ int otp_get_ecc_policy(uint32_t region, uint32_t *ecc_en, uint32_t *ecc_supporte
 int otp_set_ecc_policy(uint32_t region, uint32_t ecc_en)
 {
 	struct otp_ecc_policy policy;
+	int ret;
+
+	if (otp_use_ipc()) {
+		ret = otp_ipc_ecc_set_policy(region, ecc_en);
+		if (ret) {
+			errno = otp_ipc_status_to_errno(ret);
+			return -1;
+		}
+		return 0;
+	}
 
 	policy.region = region;
 	policy.ecc_en = ecc_en;
@@ -197,6 +379,16 @@ int otp_set_ecc_policy(uint32_t region, uint32_t ecc_en)
 int otp_prog(uint32_t offset, uint16_t data)
 {
 	struct otp_prog pdata;
+	int status;
+
+	if (otp_use_ipc()) {
+		status = otp_ipc_program(offset, 1, &data);
+		if (status) {
+			errno = otp_ipc_status_to_errno(status);
+			return -1;
+		}
+		return 0;
+	}
 
 	pdata.w_offset = offset;
 	pdata.len = 1;
@@ -205,9 +397,44 @@ int otp_prog(uint32_t offset, uint16_t data)
 	return ioctl(info_cb.otp_fd, ASPEED_OTP_PROG_DATA, &pdata);
 }
 
+/*
+ * The IPC mailbox message can only carry OTP_IPC_PROGRAM_MAX_WORDS words
+ * per round trip, so walk the region in chunks when going over IPC.
+ */
+static int otp_ipc_program_multi(uint32_t addr, const uint16_t *data, int num)
+{
+	int remaining = num;
+	int status;
+
+	while (remaining > 0) {
+		int chunk = remaining > OTP_IPC_PROGRAM_MAX_WORDS ?
+			    OTP_IPC_PROGRAM_MAX_WORDS : remaining;
+
+		status = otp_ipc_program(addr, chunk, data);
+		if (status)
+			return status;
+
+		addr += chunk;
+		data += chunk;
+		remaining -= chunk;
+	}
+
+	return 0;
+}
+
 int otp_prog_multi(uint32_t offset, uint16_t *data, int num)
 {
 	struct otp_prog pdata;
+	int status;
+
+	if (otp_use_ipc()) {
+		status = otp_ipc_program_multi(offset, data, num);
+		if (status) {
+			errno = otp_ipc_status_to_errno(status);
+			return -1;
+		}
+		return 0;
+	}
 
 	pdata.w_offset = offset;
 	pdata.len = num;

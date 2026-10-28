@@ -15,9 +15,9 @@
 #include <termios.h>
 #include <termios.h>
 #include <ctype.h>
-#include <sys/mman.h>
 #include "otp_ast2700.h"
 #include "otp_info_ast2700.h"
+#include "otp_ipc.h"
 
 /*
  * ASPEED_OTP_READ_DATA/ASPEED_OTP_PROG_DATA report the OTP_CMD_ERR_* codes
@@ -1532,7 +1532,7 @@ static int do_otpreprog_ecc(int argc, char *const argv[])
 	}
 
 	/* Step 1: check global ECC */
-	ret = ioctl(info_cb.otp_fd, ASPEED_OTP_GET_ECC, &ecc_en);
+	ret = otp_ecc_get_status(&ecc_en);
 	if (ret) {
 		printf("Failed to get ECC status\n");
 		ret = CMD_RET_FAILURE;
@@ -1731,9 +1731,8 @@ static int do_otpreprog_ecc(int argc, char *const argv[])
 			sleep(3);
 	}
 
-	ret = ioctl(info_cb.otp_fd, ASPEED_OTP_SET_ECC, OTP_ECC_ENABLE);
+	ret = otp_ecc_ctrl(true);
 	if (ret) {
-		printf("Failed to enable global ECC: %s\n", strerror(errno));
 		ret = CMD_RET_FAILURE;
 	} else {
 		printf("Global ECC enabled\n");
@@ -1749,30 +1748,65 @@ free_bufs:
 	return ret;
 }
 
-static int otp_screen_read_all(uint16_t *buf, bool *ok, int n_words)
-{
-	for (int i = 0; i < n_words; i++) {
-		struct otp_read rdata = {
-			.offset = i,
-			.len    = 1,
-			.data   = (uint8_t *)&buf[i],
-		};
-		int rc = ioctl(info_cb.otp_fd, ASPEED_OTP_READ_DATA, &rdata);
+#define OTP_SCREEN_PROGRESS_STEP	1024	/* print a progress line every N words */
 
-		if (rc) {
-			if (errno >= OTP_CMD_ERR_BASE) {
-				/* any OTP-specific error: treat as unreadable, skip */
-				buf[i] = 0xffff;
-				ok[i] = false;
-			} else {
-				printf("OTP read failed at addr 0x%x: %s\n",
-				       i, otp_cmd_errno_str(errno));
-				return rc;
+static int otp_screen_read_all(const char *phase_name, uint16_t *buf, bool *ok, int n_words)
+{
+	/*
+	 * Try an OTP_IPC_READ_MAX_WORDS-word batch read first to cut down on
+	 * mailbox round trips (the dominant per-word cost over IPC); both the
+	 * native ioctl and the IPC path fail a batch all-or-nothing, so a
+	 * batch that hits an unreadable word falls back to reading just that
+	 * batch's words one at a time so the exact bad word(s) can still be
+	 * marked unreadable instead of losing the whole batch's data.
+	 */
+	int offset = 0;
+
+	while (offset < n_words) {
+		uint16_t chunk[OTP_IPC_READ_MAX_WORDS];
+		int batch_count = n_words - offset;
+		bool got_batch;
+
+		if (batch_count > OTP_IPC_READ_MAX_WORDS)
+			batch_count = OTP_IPC_READ_MAX_WORDS;
+
+		got_batch = (otp_read_raw_multi(offset, chunk, batch_count) == 0);
+		if (!got_batch)
+			batch_count = 1;
+
+		for (int w = 0; w < batch_count; w++) {
+			int cur = offset + w;
+			int rc;
+
+			if (cur && cur % OTP_SCREEN_PROGRESS_STEP == 0)
+				printf("screen: %s read progress 0x%03x/0x%03x words (%u%%)\n",
+				       phase_name, cur, n_words, cur * 100 / n_words);
+
+			if (got_batch) {
+				buf[cur] = chunk[w];
+				ok[cur] = true;
+				continue;
 			}
-		} else {
-			ok[i] = true;
+
+			rc = otp_read_raw(cur, &buf[cur]);
+			if (rc) {
+				if (errno >= OTP_CMD_ERR_BASE) {
+					/* any OTP-specific error: treat as unreadable, skip */
+					buf[cur] = 0xffff;
+					ok[cur] = false;
+				} else {
+					printf("OTP read failed at addr 0x%x: %s\n",
+					       cur, otp_cmd_errno_str(errno));
+					return rc;
+				}
+			} else {
+				ok[cur] = true;
+			}
 		}
+
+		offset += batch_count;
 	}
+	printf("screen: %s read done (%d words)\n", phase_name, n_words);
 	return 0;
 }
 
@@ -1780,20 +1814,20 @@ static int otp_screen_read_all(uint16_t *buf, bool *ok, int n_words)
  * otp screen              -- normal read -> margin read (IREF=OTP_SCREEN_IREF) -> compare
  * otp screen <golden.bin> -- golden binary -> margin read -> compare
  *
- * The timing register (OTP_DAP_RQ_OFFSET) is set via /dev/mem before each read
- * phase and restored afterwards.  Bits that differ between the reference and the
- * margin read are printed individually; the total error count is shown at the end.
+ * otp_set_read_mode() switches the read reference current before each read
+ * phase and restores it to normal afterwards - native: direct /dev/mem
+ * write to the DAP timing register; IPC: bootmcu does the same write on
+ * its own OTP controller instance. Bits that differ between the reference
+ * and the margin read are printed individually; the total error count is
+ * shown at the end.
  */
 static int do_otpscreen(int argc, char *const argv[])
 {
 	int n_words = SW_PUF_REGION_END_ADDR;
 	uint16_t *normal_buf = NULL, *margin_buf = NULL, *golden_buf = NULL;
 	bool *ok_normal = NULL, *ok_margin = NULL;
-	void *mmap_ptr = MAP_FAILED;
-	int mem_fd = -1;
 	int ret = CMD_RET_FAILURE;
-	volatile uint32_t *timing_reg;
-	uint32_t saved_timing;
+	int margin_rc;
 	int total_err = 0;
 	int total_ones = 0;
 
@@ -1809,34 +1843,22 @@ static int do_otpscreen(int argc, char *const argv[])
 		goto out;
 	}
 
-	/* Map OTP register block for timing control */
-	mem_fd = open("/dev/mem", O_RDWR | O_SYNC);
-	if (mem_fd < 0) {
-		printf("Failed to open /dev/mem: %s\n", strerror(errno));
-		goto out;
-	}
-
-	mmap_ptr = mmap(NULL, OTP_REG_MAP_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED,
-			mem_fd, OTP_PHYS_BASE);
-	if (mmap_ptr == MAP_FAILED) {
-		printf("mmap failed: %s\n", strerror(errno));
-		goto out;
-	}
-
-	timing_reg   = (volatile uint32_t *)((uint8_t *)mmap_ptr + OTP_DAP_RQ_OFFSET);
-	saved_timing = *timing_reg;
-
 	/* --- Normal read phase --- */
-	if (otp_screen_read_all(normal_buf, ok_normal, n_words))
+	printf("Normal read...\n");
+	if (otp_screen_read_all("normal", normal_buf, ok_normal, n_words))
 		goto out;
 
 	/* --- Margin read phase (IREF = OTP_SCREEN_IREF) --- */
 	printf("Margin read (IREF=0x%x, DAP_RQ=0x%08x)...\n",
 	       OTP_SCREEN_IREF, OTP_MARGIN_TIMING);
-	*timing_reg = OTP_MARGIN_TIMING;
-	int margin_rc = otp_screen_read_all(margin_buf, ok_margin, n_words);
+	if (otp_set_read_mode(OTP_READ_MODE_MARGIN)) {
+		printf("Failed to switch to margin read mode\n");
+		goto out;
+	}
+	margin_rc = otp_screen_read_all("margin", margin_buf, ok_margin, n_words);
 
-	*timing_reg = saved_timing;
+	if (otp_set_read_mode(OTP_READ_MODE_NORMAL))
+		printf("Warning: failed to restore normal read mode\n");
 
 	if (margin_rc)
 		goto out;
@@ -1899,10 +1921,6 @@ static int do_otpscreen(int argc, char *const argv[])
 
 out:
 	free(golden_buf);
-	if (mmap_ptr != MAP_FAILED)
-		munmap(mmap_ptr, OTP_REG_MAP_SIZE);
-	if (mem_fd >= 0)
-		close(mem_fd);
 	free(ok_margin);
 	free(ok_normal);
 	free(margin_buf);
@@ -1978,6 +1996,21 @@ static int do_otpread(int argc, char *const argv[])
 	return CMD_RET_USAGE;
 }
 
+static const struct {
+	uint32_t start;
+	const char *name;
+} otp_dump_regions[] = {
+	{ ROM_REGION_START_ADDR,      "ROM"       },
+	{ RBP_REGION_START_ADDR,      "RBP"       },
+	{ CONF_REGION_START_ADDR,     "CONF"      },
+	{ STRAP_REGION_START_ADDR,    "STRAP"     },
+	{ STRAPEXT_REGION_START_ADDR, "STRAP_EXT" },
+	{ USER_REGION_START_ADDR,     "USER"      },
+	{ SEC_REGION_START_ADDR,      "SECURE"    },
+	{ CAL_REGION_START_ADDR,      "CALIPTRA"  },
+	{ SW_PUF_REGION_START_ADDR,   "SW_PUF"    },
+};
+
 static int do_otpdump(int argc, char *const argv[])
 {
 	uint32_t offset;
@@ -2008,33 +2041,64 @@ static int do_otpdump(int argc, char *const argv[])
 	}
 
 	/*
-	 * Read all OTP memory up to the end of the SWPUF region.
+	 * Read all OTP memory up to the end of the SWPUF region. Try an
+	 * OTP_IPC_READ_MAX_WORDS-word batch read first to cut down on
+	 * mailbox round trips (the dominant per-word cost over IPC); both
+	 * the native ioctl and the IPC path fail a batch all-or-nothing, so
+	 * a batch that hits a read-protected word falls back to reading
+	 * just that batch's words one at a time so --skip_locked_regions
+	 * can still pinpoint exactly which word(s) are locked.
 	 */
-	for (offset = 0; offset < SW_PUF_REGION_END_ADDR; offset++) {
-		struct otp_read rdata;
+	offset = 0;
+	while (offset < SW_PUF_REGION_END_ADDR) {
+		uint16_t chunk[OTP_IPC_READ_MAX_WORDS];
+		uint32_t batch_count = SW_PUF_REGION_END_ADDR - offset;
+		bool got_batch;
 
-		rdata.offset = offset;
-		rdata.len = 1;
-		rdata.data = (uint8_t *)&data;
+		if (batch_count > OTP_IPC_READ_MAX_WORDS)
+			batch_count = OTP_IPC_READ_MAX_WORDS;
 
-		ret = ioctl(info_cb.otp_fd, ASPEED_OTP_READ_DATA, &rdata);
-		if (ret) {
-			if (skip_locked_regions && errno == OTP_CMD_ERR_REGION_FAIL) {
-				data = 0xffff;
+		got_batch = (otp_read_raw_multi(offset, chunk, batch_count) == 0);
+		if (!got_batch)
+			batch_count = 1;
+
+		for (uint32_t w = 0; w < batch_count; w++) {
+			uint32_t cur = offset + w;
+
+			for (int r = 0; r < ARRAY_SIZE(otp_dump_regions); r++) {
+				if (cur == otp_dump_regions[r].start) {
+					printf("dump: entering %-10s region at offset 0x%03x (%u/%u words)\n",
+					       otp_dump_regions[r].name, cur, cur,
+					       SW_PUF_REGION_END_ADDR);
+					break;
+				}
+			}
+
+			if (got_batch) {
+				data = chunk[w];
 			} else {
-				printf("Failed to read OTP at offset 0x%x, ret = %d, errno = %d (%s)\n",
-				       offset, ret, errno, otp_cmd_errno_str(errno));
+				ret = otp_read_raw(cur, &data);
+				if (ret) {
+					if (skip_locked_regions && errno == OTP_CMD_ERR_REGION_FAIL) {
+						data = 0xffff;
+					} else {
+						printf("Failed to read OTP at offset 0x%x, ret = %d, errno = %d (%s)\n",
+						       cur, ret, errno, otp_cmd_errno_str(errno));
+						fclose(fd);
+						return CMD_RET_FAILURE;
+					}
+				}
+			}
+
+			/* Write the 16-bit word to the file */
+			if (fwrite(&data, 2, 1, fd) != 1) {
+				printf("Failed to write to %s\n", filename);
 				fclose(fd);
 				return CMD_RET_FAILURE;
 			}
 		}
 
-		/* Write the 16-bit word to the file */
-		if (fwrite(&data, 2, 1, fd) != 1) {
-			printf("Failed to write to %s\n", filename);
-			fclose(fd);
-			return CMD_RET_FAILURE;
-		}
+		offset += batch_count;
 	}
 
 	fclose(fd);
@@ -2399,7 +2463,7 @@ static int do_otpecc(int argc, char *const argv[])
 		return CMD_RET_USAGE;
 
 	/* Get ECC status */
-	ret = ioctl(info_cb.otp_fd, ASPEED_OTP_GET_ECC, &ecc_en);
+	ret = otp_ecc_get_status(&ecc_en);
 	if (ret)
 		return CMD_RET_FAILURE;
 
@@ -2424,7 +2488,7 @@ static int do_otpecc(int argc, char *const argv[])
 		if (ecc_en == OTP_ECC_ENABLE) {
 			printf("OTP ECC is already enabled\n");
 		} else {
-			ret = ioctl(info_cb.otp_fd, ASPEED_OTP_SET_ECC, OTP_ECC_ENABLE);
+			ret = otp_ecc_ctrl(true);
 			if (ret)
 				return CMD_RET_FAILURE;
 
@@ -2438,7 +2502,7 @@ static int do_otpecc(int argc, char *const argv[])
 		if (ecc_en == OTP_ECC_DISABLE) {
 			printf("OTP ECC is already disabled\n");
 		} else {
-			ret = ioctl(info_cb.otp_fd, ASPEED_OTP_SET_ECC, OTP_ECC_DISABLE);
+			ret = otp_ecc_ctrl(false);
 			if (ret)
 				return CMD_RET_FAILURE;
 
@@ -2539,11 +2603,28 @@ int main(int argc, char *argv[])
 		goto end;
 	}
 
+	/*
+	 * /dev/aspeed-otp may legitimately be absent: once bootmcu locks OTP
+	 * master access to itself, the kernel's own OTP driver probe fails
+	 * too, so there's nothing to open here. Don't bail out yet - try the
+	 * IPC path below before giving up.
+	 */
 	info_cb.otp_fd = open("/dev/aspeed-otp", O_RDWR);
-	if (info_cb.otp_fd == -1) {
-		printf("Can't open /dev/aspeed-otp, please install driver!!\n");
+
+	/*
+	 * Direct CA35 register access via /dev/aspeed-otp takes priority when
+	 * available; OTP read/program/ECC ops only go over the bootmcu IPC
+	 * mailbox as a fallback for when bootmcu has locked CA35 out of OTP.
+	 */
+	otp_ipc_probe();
+
+	if (info_cb.otp_fd == -1 && !otp_ipc_available()) {
+		printf("Can't open /dev/aspeed-otp and no BOOTMCU OTP IPC channel found, "
+		       "please install driver or check bootmcu firmware!!\n");
 		exit(EXIT_FAILURE);
 	}
+
+	printf("OTP driver: %s\n", info_cb.otp_fd >= 0 ? "native (CA35 direct)" : "IPC (via BOOTMCU)");
 
 	if (strcmp(argv[1], "0") && strcmp(argv[1], "1")) {
 		printf("Invalid otp device %s, only support 0 and 1\n", argv[1]);

@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/ioctl.h>
+#include <time.h>
 #include <unistd.h>
 #include "otp_ipc.h"
 
@@ -84,18 +85,37 @@ bool otp_ipc_available(void)
 
 static int otp_ipc_call(uint32_t *req, uint32_t *resp)
 {
+	static uint8_t next_seq;
+	struct timespec ts_start, ts_now;
 	struct pollfd pfd;
+	uint8_t seq;
 	int ret;
+
+	seq = ++next_seq;
+	req[1] |= ((uint32_t)seq << OTP_IPC_SEQ_SHIFT);
 
 	ret = ioctl(otp_ipc_fd, ASPEED_MBOX_IOCTL_SEND, req);
 	if (ret < 0)
 		return -errno;
 
+	clock_gettime(CLOCK_MONOTONIC, &ts_start);
+
 	pfd.fd = otp_ipc_fd;
 	pfd.events = POLLIN;
 
 	for (;;) {
-		ret = poll(&pfd, 1, OTP_IPC_TIMEOUT_MS);
+		int elapsed_ms, remaining_ms;
+
+		clock_gettime(CLOCK_MONOTONIC, &ts_now);
+		elapsed_ms = (ts_now.tv_sec - ts_start.tv_sec) * 1000 +
+			     (ts_now.tv_nsec - ts_start.tv_nsec) / 1000000;
+		remaining_ms = OTP_IPC_TIMEOUT_MS - elapsed_ms;
+		if (remaining_ms <= 0) {
+			printf("otp_ipc: timed out waiting for bootmcu response\n");
+			return -ETIMEDOUT;
+		}
+
+		ret = poll(&pfd, 1, remaining_ms);
 		if (ret < 0) {
 			if (errno == EINTR)
 				continue;
@@ -113,7 +133,17 @@ static int otp_ipc_call(uint32_t *req, uint32_t *resp)
 			return -errno;
 		}
 
-		return (int)resp[0];
+		/* A reply that doesn't echo our seq belongs to a call we
+		 * already gave up on; discard it and keep polling for ours
+		 * within what's left of the overall timeout.
+		 */
+		if (OTP_IPC_RESP_SEQ(resp[0]) != seq) {
+			printf("otp_ipc: discarding stale reply (seq %u, expected %u)\n",
+			       OTP_IPC_RESP_SEQ(resp[0]), seq);
+			continue;
+		}
+
+		return OTP_IPC_RESP_STATUS(resp[0]);
 	}
 }
 

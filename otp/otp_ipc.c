@@ -185,20 +185,20 @@ int otp_ipc_program(uint32_t addr, uint32_t count, const uint16_t *data)
 	return otp_ipc_call(req, resp);
 }
 
-int otp_ipc_ecc_get_status(int *ecc_en)
+int otp_ipc_ecc_get_status(int *status)
 {
 	uint32_t req[8] = {0, OTP_IPC_PACK_OP_COUNT(OTP_IPC_OP_ECC_GET_STATUS, 0), 0, 0, 0, 0, 0, 0};
 	uint32_t resp[8] = {0};
-	int status;
+	int ret;
 
 	if (otp_ipc_fd < 0)
 		return -ENODEV;
 
-	status = otp_ipc_call(req, resp);
-	if (status == 0)
-		*ecc_en = (int)resp[1];
+	ret = otp_ipc_call(req, resp);
+	if (ret == 0)
+		*status = (int)resp[1];
 
-	return status;
+	return ret;
 }
 
 int otp_ipc_ecc_set_enable(int enable)

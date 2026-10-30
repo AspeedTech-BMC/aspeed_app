@@ -305,12 +305,17 @@ int otp_set_read_mode(uint32_t mode)
 	return 0;
 }
 
-int otp_ecc_get_status(int *ecc_en)
+/*
+ * Returns enum otp_ecc_global_status, distinguishing ECC being off from the
+ * two ways it can be on: temporarily by software, or latched by a hardware
+ * strap that can't be turned back off until the next power-on.
+ */
+int otp_ecc_get_status(int *status)
 {
 	if (otp_use_ipc())
-		return otp_ipc_ecc_get_status(ecc_en);
+		return otp_ipc_ecc_get_status(status);
 
-	return ioctl(info_cb.otp_fd, ASPEED_OTP_GET_ECC, ecc_en);
+	return ioctl(info_cb.otp_fd, ASPEED_OTP_GET_ECC, status);
 }
 
 int otp_ecc_ctrl(bool enable)

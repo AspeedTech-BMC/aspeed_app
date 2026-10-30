@@ -221,6 +221,17 @@ enum otp_ecc_codes {
 	OTP_ECC_ENABLE = 1,
 };
 
+/*
+ * ASPEED_OTP_GET_ECC result (replaces a plain enable/disable): distinguishes
+ * why ECC is on, since a hardware-latched strap can never be turned back off
+ * until the next power-on while a software-temporary enable still can.
+ */
+enum otp_ecc_global_status {
+	OTP_ECC_GLOBAL_DISABLED = 0,
+	OTP_ECC_GLOBAL_SW_ENABLED,
+	OTP_ECC_GLOBAL_HW_ENABLED,
+};
+
 struct otp_header {
 	uint8_t		otp_magic[8];
 	uint32_t	soc_ver;
@@ -324,7 +335,7 @@ int otp_read_cptra(uint32_t offset, uint16_t *data);
 int otp_read_swpuf(uint32_t offset, uint16_t *data);
 int otp_set_read_mode(uint32_t mode);
 
-int otp_ecc_get_status(int *ecc_en);
+int otp_ecc_get_status(int *status);
 int otp_ecc_ctrl(bool enable);
 int otp_get_ecc_policy(uint32_t region, uint32_t *ecc_en, uint32_t *ecc_supported);
 int otp_set_ecc_policy(uint32_t region, uint32_t ecc_en);

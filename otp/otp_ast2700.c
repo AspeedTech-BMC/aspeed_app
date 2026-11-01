@@ -2296,6 +2296,87 @@ static int do_otpprog(int argc, char *const argv[])
 		return CMD_RET_USAGE;
 }
 
+/*
+ * otp pb strap-ext/strap-ext-vld only ever let their value be 1 (see the
+ * bit_offset/value parsing in do_otppb()), so there's no way to pass
+ * multiple bits for the same word in one command line - and both regions
+ * support ECC, so programming the same word more than once would corrupt
+ * its parity. Collect every bit the caller wants first, then program each
+ * word exactly once, same as every other region.
+ */
+static int otp_pb_strap_ext_interactive(int mode, int nconfirm)
+{
+	const char *label = mode == OTP_REGION_STRAP_EXT_VLD ? "OTPSTRAPEXT_VLD" : "OTPSTRAPEXT";
+	uint16_t word_value[8] = {0};
+	bool word_dirty[8] = {false};
+	bool any = false;
+	char line[32];
+	int ret;
+
+	printf("Enter %s bit offsets (0x0~0x7f) to program, one at a time.\n", label);
+	printf("Type \"end\" when done.\n");
+
+	while (1) {
+		int bit_offset;
+		size_t len;
+
+		printf("bit offset: ");
+		fflush(stdout);
+		if (!fgets(line, sizeof(line), stdin)) {
+			printf(" Aborting\n");
+			return OTP_FAILURE;
+		}
+
+		len = strlen(line);
+		if (len && line[len - 1] == '\n')
+			line[len - 1] = '\0';
+
+		if (!strcmp(line, "end"))
+			break;
+
+		bit_offset = (int)strtoul(line, NULL, 16);
+		if (bit_offset >= 128) {
+			printf("Invalid bit offset, must be < 0x80\n");
+			continue;
+		}
+
+		word_value[bit_offset / 16] |= BIT(bit_offset % 16);
+		word_dirty[bit_offset / 16] = true;
+		any = true;
+		printf("Queued bit 0x%x (word 0x%x)\n", bit_offset, bit_offset / 16);
+	}
+
+	if (!any) {
+		printf("Nothing to program.\n");
+		return OTP_SUCCESS;
+	}
+
+	printf("\nThe following %s words will be programmed:\n", label);
+	for (int w = 0; w < 8; w++) {
+		if (word_dirty[w])
+			printf("  word 0x%x = 0x%04x\n", w, word_value[w]);
+	}
+
+	if (!nconfirm) {
+		printf("type \"YES\" (no quotes) to continue:\n");
+		if (!confirm_yesno()) {
+			printf(" Aborting\n");
+			return OTP_FAILURE;
+		}
+	}
+
+	for (int w = 0; w < 8; w++) {
+		if (!word_dirty[w])
+			continue;
+
+		ret = otp_prog_data(mode, w, 0, word_value[w], 1, false);
+		if (ret)
+			return OTP_FAILURE;
+	}
+
+	return OTP_SUCCESS;
+}
+
 static int do_otppb(int argc, char *const argv[])
 {
 	struct otpstrap_status otpstrap[32];
@@ -2305,6 +2386,27 @@ static int do_otppb(int argc, char *const argv[])
 	int bit_offset;
 	int value;
 	int ret;
+
+	if (argc >= 2 && !strcmp(argv[1], "strap-ext")) {
+		if (argc == 3 && !strcmp(argv[2], "o"))
+			nconfirm = 1;
+		else if (argc != 2)
+			return CMD_RET_USAGE;
+
+		ret = otp_pb_strap_ext_interactive(OTP_REGION_STRAP_EXT, nconfirm);
+		goto end;
+	}
+
+	if (argc >= 2 && !strcmp(argv[1], "strap-ext-vld") &&
+	    !(argc >= 3 && !strcmp(argv[2], "all"))) {
+		if (argc == 3 && !strcmp(argv[2], "o"))
+			nconfirm = 1;
+		else if (argc != 2)
+			return CMD_RET_USAGE;
+
+		ret = otp_pb_strap_ext_interactive(OTP_REGION_STRAP_EXT_VLD, nconfirm);
+		goto end;
+	}
 
 	if (argc != 3 && argc != 4 && argc != 5 && argc != 6) {
 		printf("%s: argc:%d\n", __func__, argc);
@@ -2321,8 +2423,6 @@ static int do_otppb(int argc, char *const argv[])
 		mode = OTP_REGION_RBP;
 	else if (!strcmp(argv[0], "strap"))
 		mode = OTP_REGION_STRAP;
-	else if (!strcmp(argv[0], "strap-ext"))
-		mode = OTP_REGION_STRAP_EXT;
 	else if (!strcmp(argv[0], "strap-ext-vld"))
 		mode = OTP_REGION_STRAP_EXT_VLD;
 	else if (!strcmp(argv[0], "u-data"))
@@ -2353,31 +2453,30 @@ static int do_otppb(int argc, char *const argv[])
 		if (value != 0 && value != 1)
 			return CMD_RET_USAGE;
 
-	} else if (mode == OTP_REGION_STRAP_EXT) {
-		bit_offset = (int)strtoul(argv[0], NULL, 16);
-		value = (int)strtoul(argv[1], NULL, 16);
-		if (bit_offset >= 128)
-			return CMD_RET_USAGE;
-		if (value != 1)
-			return CMD_RET_USAGE;
-
 	} else if (mode == OTP_REGION_STRAP_EXT_VLD) {
-		if (!strcmp(argv[0], "all")) {
-			for (int i = 0; i < 8; i++) {
-				ret = otp_prog_data(mode, i, 0, GENMASK(15, 0), 1, true);
-				if (ret)
-					goto end;
-			}
+		/* do_otppb()'s top-level interception only lets "all" [o] reach here */
+		if (argc == 2 && !strcmp(argv[1], "o"))
+			nconfirm = 1;
+		else if (argc != 1)
+			return CMD_RET_USAGE;
 
-			goto end;
+		if (!nconfirm) {
+			printf("This will mark every OTPSTRAPEXT_VLD bit as valid.\n");
+			printf("type \"YES\" (no quotes) to continue:\n");
+			if (!confirm_yesno()) {
+				printf(" Aborting\n");
+				ret = OTP_FAILURE;
+				goto end;
+			}
 		}
 
-		bit_offset = (int)strtoul(argv[0], NULL, 16);
-		value = (int)strtoul(argv[1], NULL, 16);
-		if (bit_offset >= 128)
-			return CMD_RET_USAGE;
-		if (value != 1)
-			return CMD_RET_USAGE;
+		for (int i = 0; i < 8; i++) {
+			ret = otp_prog_data(mode, i, 0, GENMASK(15, 0), 1, true);
+			if (ret)
+				goto end;
+		}
+
+		goto end;
 
 	} else {
 		otp_addr = (int)strtoul(argv[0], NULL, 16);
@@ -2413,10 +2512,6 @@ static int do_otppb(int argc, char *const argv[])
 		}
 
 		value = 1;
-
-	} else if (mode == OTP_REGION_STRAP_EXT || mode == OTP_REGION_STRAP_EXT_VLD) {
-		otp_addr = bit_offset / 16;
-		bit_offset = bit_offset % 16;
 
 	} else if (mode == OTP_REGION_USER) {
 		if (otp_addr >= OTP_USER_REGION_SIZE)
@@ -2794,8 +2889,9 @@ static void usage(void)
 	       "\totp <dev> version\n"
 	       "\totp <dev> read rom|rbp|conf|strap|strap-pro|strap-ext|strap-ext-vld|u-data|s-data|cptra|puf <otp_w_offset> <w_count>\n"
 	       "\totp <dev> pb rbp|conf|u-data|s-data|cptra [o] <otp_w_offset> <bit_offset> <value>\n"
-	       "\totp <dev> pb strap|strap-ext|strap-ext-vld [o] <bit_offset> <value>\n"
-	       "\totp <dev> pb strap-ext-vld all\n"
+	       "\totp <dev> pb strap [o] <bit_offset> <value>\n"
+	       "\totp <dev> pb strap-ext-vld all [o]\n"
+	       "\totp <dev> pb strap-ext|strap-ext-vld [o] (interactive: enter bit offsets one at a time, \"end\" to finish)\n"
 	       "\totp <dev> prog <addr>\n"
 	       "\totp <dev> info key|rbp|conf|strap|strap-ext\n"
 	       "\totp <dev> patch prog <dram_addr> <otp_w_offset> <w_count>\n"

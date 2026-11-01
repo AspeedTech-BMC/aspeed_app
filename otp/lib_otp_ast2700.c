@@ -853,38 +853,32 @@ int otp_prog_strap_ext_image(struct otp_image_layout *image_layout)
 {
 	uint16_t *strap_ext;
 	uint16_t *strap_ext_vld;
-	int w_offset, bit_offset;
-	int bit, vbit;
-	int fail = 0;
 	int ret;
 
 	strap_ext = (uint16_t *)image_layout->strap_ext;
 	strap_ext_vld = strap_ext + 8;
 
+	/*
+	 * One otp_prog_data() call per word, not per bit: STRAP_EXT supports
+	 * ECC, and issuing several program calls against the same word would
+	 * corrupt its parity the moment ECC is active for this region.
+	 */
 	printf("Start Programming...\n");
-	for (int i = 0; i < 128; i++) {
-		w_offset = i / 16;
-		bit_offset = i % 16;
-		bit = (strap_ext[w_offset] >> bit_offset) & 0x1;
-		vbit = (strap_ext_vld[w_offset] >> bit_offset) & 0x1;
-
-		if (bit) {
-			ret = otp_prog_data(OTP_REGION_STRAP_EXT, w_offset, bit_offset, 1, 1,
-					    false);
+	for (int w_offset = 0; w_offset < 8; w_offset++) {
+		if (strap_ext[w_offset]) {
+			ret = otp_prog_data(OTP_REGION_STRAP_EXT, w_offset, 0,
+					    strap_ext[w_offset], 1, false);
 			if (ret)
 				return OTP_FAILURE;
 		}
 
-		if (vbit) {
-			ret = otp_prog_data(OTP_REGION_STRAP_EXT_VLD, w_offset, bit_offset, 1, 1,
-					    false);
+		if (strap_ext_vld[w_offset]) {
+			ret = otp_prog_data(OTP_REGION_STRAP_EXT_VLD, w_offset, 0,
+					    strap_ext_vld[w_offset], 1, false);
 			if (ret)
 				return OTP_FAILURE;
 		}
 	}
-
-	if (fail == 1)
-		return OTP_FAILURE;
 
 	printf("Done\n");
 	return OTP_SUCCESS;

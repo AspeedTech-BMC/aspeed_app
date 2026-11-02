@@ -2297,12 +2297,11 @@ static int do_otpprog(int argc, char *const argv[])
 }
 
 /*
- * otp pb strap-ext/strap-ext-vld only ever let their value be 1 (see the
- * bit_offset/value parsing in do_otppb()), so there's no way to pass
- * multiple bits for the same word in one command line - and both regions
- * support ECC, so programming the same word more than once would corrupt
- * its parity. Collect every bit the caller wants first, then program each
- * word exactly once, same as every other region.
+ * Both STRAP_EXT and STRAP_EXT_VLD support ECC, so programming the same
+ * word more than once would corrupt its parity. For a caller who wants to
+ * set several bits in the same word but doesn't already know its final
+ * value, collect every bit first, then program each word exactly once -
+ * see otp_pb_strap_ext_word() for the non-interactive counterpart.
  */
 static int otp_pb_strap_ext_interactive(int mode, int nconfirm)
 {
@@ -2317,7 +2316,8 @@ static int otp_pb_strap_ext_interactive(int mode, int nconfirm)
 	printf("Type \"end\" when done.\n");
 
 	while (1) {
-		int bit_offset;
+		unsigned long bit_offset;
+		char *endp;
 		size_t len;
 
 		printf("bit offset: ");
@@ -2334,16 +2334,16 @@ static int otp_pb_strap_ext_interactive(int mode, int nconfirm)
 		if (!strcmp(line, "end"))
 			break;
 
-		bit_offset = (int)strtoul(line, NULL, 16);
-		if (bit_offset >= 128) {
-			printf("Invalid bit offset, must be < 0x80\n");
+		bit_offset = strtoul(line, &endp, 16);
+		if (endp == line || *endp != '\0' || bit_offset >= 128) {
+			printf("Invalid bit offset, must be a hex number < 0x80\n");
 			continue;
 		}
 
 		word_value[bit_offset / 16] |= BIT(bit_offset % 16);
 		word_dirty[bit_offset / 16] = true;
 		any = true;
-		printf("Queued bit 0x%x (word 0x%x)\n", bit_offset, bit_offset / 16);
+		printf("Queued bit 0x%lx (word 0x%lx)\n", bit_offset, bit_offset / 16);
 	}
 
 	if (!any) {
@@ -2377,34 +2377,85 @@ static int otp_pb_strap_ext_interactive(int mode, int nconfirm)
 	return OTP_SUCCESS;
 }
 
+/*
+ * Non-interactive counterpart to otp_pb_strap_ext_interactive(): lets a
+ * caller who already knows the word's full target value burn it in one
+ * shot. Only a word-aligned bit_offset (a multiple of 16) is accepted so
+ * the whole word is always programmed in a single otp_prog_data() call.
+ */
+static int otp_pb_strap_ext_word(int mode, const char *bit_offset_str, const char *value_str,
+				 int nconfirm)
+{
+	char *endp;
+	uint32_t bit_offset;
+	uint32_t value;
+
+	bit_offset = strtoul(bit_offset_str, &endp, 16);
+	if (endp == bit_offset_str || *endp != '\0' || bit_offset >= 128 ||
+	    bit_offset % 16 != 0) {
+		printf("bit_offset must be a word-aligned (multiple of 16) hex number < 0x80\n");
+		return OTP_USAGE;
+	}
+
+	value = strtoul(value_str, &endp, 16);
+	if (endp == value_str || *endp != '\0')
+		return OTP_USAGE;
+
+	return otp_prog_data(mode, bit_offset / 16, 0, value, nconfirm, true);
+}
+
 static int do_otppb(int argc, char *const argv[])
 {
 	struct otpstrap_status otpstrap[32];
 	int mode = 0;
 	int nconfirm = 0;
-	int otp_addr = 0;
-	int bit_offset;
-	int value;
+	/*
+	 * uint32_t, not int: these come straight from strtoul() (unsigned
+	 * long), and every bounds check below (e.g. "bit_offset >= 32") needs
+	 * to run as an unsigned comparison so a huge hex input can't wrap
+	 * into a negative value and slip past it.
+	 */
+	uint32_t otp_addr = 0;
+	uint32_t bit_offset;
+	uint32_t value;
 	int ret;
 
 	if (argc >= 2 && !strcmp(argv[1], "strap-ext")) {
-		if (argc == 3 && !strcmp(argv[2], "o"))
+		int next = 2;
+
+		if (argc > next && !strcmp(argv[next], "o")) {
 			nconfirm = 1;
-		else if (argc != 2)
+			next++;
+		}
+
+		if (argc == next)
+			ret = otp_pb_strap_ext_interactive(OTP_REGION_STRAP_EXT, nconfirm);
+		else if (argc == next + 2)
+			ret = otp_pb_strap_ext_word(OTP_REGION_STRAP_EXT, argv[next],
+						argv[next + 1], nconfirm);
+		else
 			return CMD_RET_USAGE;
 
-		ret = otp_pb_strap_ext_interactive(OTP_REGION_STRAP_EXT, nconfirm);
 		goto end;
 	}
 
 	if (argc >= 2 && !strcmp(argv[1], "strap-ext-vld") &&
 	    !(argc >= 3 && !strcmp(argv[2], "all"))) {
-		if (argc == 3 && !strcmp(argv[2], "o"))
+		int next = 2;
+
+		if (argc > next && !strcmp(argv[next], "o")) {
 			nconfirm = 1;
-		else if (argc != 2)
+			next++;
+		}
+
+		if (argc == next)
+			ret = otp_pb_strap_ext_interactive(OTP_REGION_STRAP_EXT_VLD, nconfirm);
+		else if (argc == next + 2)
+			ret = otp_pb_strap_ext_word(OTP_REGION_STRAP_EXT_VLD, argv[next],
+						argv[next + 1], nconfirm);
+		else
 			return CMD_RET_USAGE;
 
-		ret = otp_pb_strap_ext_interactive(OTP_REGION_STRAP_EXT_VLD, nconfirm);
 		goto end;
 	}
 
@@ -2892,6 +2943,7 @@ static void usage(void)
 	       "\totp <dev> pb strap [o] <bit_offset> <value>\n"
 	       "\totp <dev> pb strap-ext-vld all [o]\n"
 	       "\totp <dev> pb strap-ext|strap-ext-vld [o] (interactive: enter bit offsets one at a time, \"end\" to finish)\n"
+	       "\totp <dev> pb strap-ext|strap-ext-vld [o] <word-aligned bit_offset> <full word value>\n"
 	       "\totp <dev> prog <addr>\n"
 	       "\totp <dev> info key|rbp|conf|strap|strap-ext\n"
 	       "\totp <dev> patch prog <dram_addr> <otp_w_offset> <w_count>\n"

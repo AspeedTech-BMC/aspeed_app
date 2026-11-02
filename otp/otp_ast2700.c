@@ -21,10 +21,15 @@
 
 #define ANSI_COLOR_RESET		"\e[0m"
 #define ANSI_COLOR_RED			"\e[31m"
+#define ANSI_COLOR_BRIGHT_RED		"\e[91m"
 #define ANSI_COLOR_GREEN		"\e[32m"
 #define ANSI_COLOR_YELLOW		"\e[33m"
 #define ANSI_COLOR_CYAN			"\e[36m"
 #define ANSI_COLOR_BOLD			"\e[1m"
+
+/* Error/usage diagnostics in bright red, to stand out from normal command output. */
+#define otp_err(fmt, ...) \
+	printf(ANSI_COLOR_BRIGHT_RED fmt ANSI_COLOR_RESET "\n", ##__VA_ARGS__)
 
 /*
  * ASPEED_OTP_READ_DATA/ASPEED_OTP_PROG_DATA report the OTP_CMD_ERR_* codes
@@ -53,14 +58,18 @@ static int otp_print_rom(uint32_t offset, int w_count)
 	uint16_t ret[1];
 	int rc;
 
-	if (offset + w_count > range)
+	if (offset + w_count > range) {
+		otp_err("offset+count 0x%x exceeds region size 0x%x", offset + w_count, range);
 		return OTP_USAGE;
+	}
 
 	printf("ROM_REGION: 0x%x~0x%x\n", offset, offset + w_count);
 	for (int i = offset; i < offset + w_count; i++) {
 		rc = otp_read_rom(i, &ret[0]);
-		if (rc)
+		if (rc) {
+			otp_err("OTP read failed at word offset 0x%x, ret=%d", i, rc);
 			return rc;
+		}
 
 		if (i % 8 == 0)
 			printf("\n%03X: %04X ", i * 2, ret[0]);
@@ -78,13 +87,17 @@ static int otp_print_rbp(uint32_t offset, int w_count)
 	uint16_t ret[1];
 	int rc;
 
-	if (offset + w_count > range)
+	if (offset + w_count > range) {
+		otp_err("offset+count 0x%x exceeds region size 0x%x", offset + w_count, range);
 		return OTP_USAGE;
+	}
 
 	for (int i = offset; i < offset + w_count; i++) {
 		rc = otp_read_rbp(i, ret);
-		if (rc)
+		if (rc) {
+			otp_err("OTP read failed at word offset 0x%x, ret=%d", i, rc);
 			return rc;
+		}
 
 		printf("OTPRBP0x%X: 0x%04X\n", i, ret[0]);
 	}
@@ -99,13 +112,17 @@ static int otp_print_conf(uint32_t offset, int w_count)
 	uint16_t ret[1];
 	int rc;
 
-	if (offset + w_count > range)
+	if (offset + w_count > range) {
+		otp_err("offset+count 0x%x exceeds region size 0x%x", offset + w_count, range);
 		return OTP_USAGE;
+	}
 
 	for (int i = offset; i < offset + w_count; i++) {
 		rc = otp_read_conf(i, ret);
-		if (rc)
+		if (rc) {
+			otp_err("OTP read failed at word offset 0x%x, ret=%d", i, rc);
 			return rc;
+		}
 
 		printf("OTPCFG0x%X: 0x%04X\n", i, ret[0]);
 	}
@@ -120,13 +137,17 @@ static int otp_print_strap(uint32_t offset, int w_count)
 	uint16_t ret[1];
 	int rc;
 
-	if (offset + w_count > range)
+	if (offset + w_count > range) {
+		otp_err("offset+count 0x%x exceeds region size 0x%x", offset + w_count, range);
 		return OTP_USAGE;
+	}
 
 	for (int i = offset; i < offset + w_count; i++) {
 		rc = otp_read_strap(2 + i, ret);
-		if (rc)
+		if (rc) {
+			otp_err("OTP read failed at word offset 0x%x, ret=%d", i, rc);
 			return rc;
+		}
 
 		printf("OTPSTRAP0x%X: 0x%04X\n", i, ret[0]);
 	}
@@ -141,13 +162,17 @@ static int otp_print_strap_pro(uint32_t offset, int w_count)
 	uint16_t ret[1];
 	int rc;
 
-	if (offset + w_count > range)
+	if (offset + w_count > range) {
+		otp_err("offset+count 0x%x exceeds region size 0x%x", offset + w_count, range);
 		return OTP_USAGE;
+	}
 
 	for (int i = offset; i < offset + w_count; i++) {
 		rc = otp_read_strap(i, ret);
-		if (rc)
+		if (rc) {
+			otp_err("OTP read failed at word offset 0x%x, ret=%d", i, rc);
 			return rc;
+		}
 
 		printf("OTPSTRAP_PRO0x%X: 0x%04X\n", i, ret[0]);
 	}
@@ -162,13 +187,17 @@ static int otp_print_strap_ext(uint32_t offset, int w_count)
 	uint16_t ret[1];
 	int rc;
 
-	if (offset + w_count > range)
+	if (offset + w_count > range) {
+		otp_err("offset+count 0x%x exceeds region size 0x%x", offset + w_count, range);
 		return OTP_USAGE;
+	}
 
 	for (int i = offset; i < offset + w_count; i++) {
 		rc = otp_read_strap_ext(i, ret);
-		if (rc)
+		if (rc) {
+			otp_err("OTP read failed at word offset 0x%x, ret=%d", i, rc);
 			return rc;
+		}
 
 		printf("OTPSTRAPEXT0x%X: 0x%04X\n", i, ret[0]);
 	}
@@ -183,13 +212,17 @@ static int otp_print_strap_ext_valid(uint32_t offset, int w_count)
 	uint16_t ret[1];
 	int rc;
 
-	if (offset + w_count > range)
+	if (offset + w_count > range) {
+		otp_err("offset+count 0x%x exceeds region size 0x%x", offset + w_count, range);
 		return OTP_USAGE;
+	}
 
 	for (int i = offset; i < offset + w_count; i++) {
 		rc = otp_read_strap_ext_vld(i, ret);
-		if (rc)
+		if (rc) {
+			otp_err("OTP read failed at word offset 0x%x, ret=%d", i, rc);
 			return rc;
+		}
 
 		printf("OTPSTRAPEXT_VLD0x%X: 0x%04X\n", i, ret[0]);
 	}
@@ -204,14 +237,18 @@ static int otp_print_user_data(uint32_t offset, int w_count)
 	uint16_t ret[1];
 	int rc;
 
-	if (offset + w_count > range)
+	if (offset + w_count > range) {
+		otp_err("offset+count 0x%x exceeds region size 0x%x", offset + w_count, range);
 		return OTP_USAGE;
+	}
 
 	printf("User Region: 0x%x~0x%x\n", offset, offset + w_count);
 	for (int i = offset; i < offset + w_count; i++) {
 		rc = otp_read_udata(i, &ret[0]);
-		if (rc)
+		if (rc) {
+			otp_err("OTP read failed at word offset 0x%x, ret=%d", i, rc);
 			return rc;
+		}
 
 		if (i % 8 == 0)
 			printf("\n%03X: %04X ", i * 2, ret[0]);
@@ -229,14 +266,18 @@ static int otp_print_sec_data(uint32_t offset, int w_count)
 	uint16_t ret;
 	int rc;
 
-	if (offset + w_count > range)
+	if (offset + w_count > range) {
+		otp_err("offset+count 0x%x exceeds region size 0x%x", offset + w_count, range);
 		return OTP_USAGE;
+	}
 
 	printf("Secure Region: 0x%x~0x%x\n", offset, offset + w_count);
 	for (int i = offset; i < offset + w_count; i++) {
 		rc = otp_read_sdata(i, &ret);
-		if (rc)
+		if (rc) {
+			otp_err("OTP read failed at word offset 0x%x, ret=%d", i, rc);
 			return rc;
+		}
 
 		if (i % 8 == 0)
 			printf("\n%03X: %04X ", i * 2, ret);
@@ -254,14 +295,18 @@ static int otp_print_cptra(uint32_t offset, int w_count)
 	uint16_t ret[1];
 	int rc;
 
-	if (offset + w_count > range)
+	if (offset + w_count > range) {
+		otp_err("offset+count 0x%x exceeds region size 0x%x", offset + w_count, range);
 		return OTP_USAGE;
+	}
 
 	printf("Caliptra Region: 0x%x~0x%x\n", offset, offset + w_count);
 	for (int i = offset; i < offset + w_count; i++) {
 		rc = otp_read_cptra(i, &ret[0]);
-		if (rc)
+		if (rc) {
+			otp_err("OTP read failed at word offset 0x%x, ret=%d", i, rc);
 			return rc;
+		}
 
 		if (i % 8 == 0)
 			printf("\n%03X: %04X ", i * 2, ret[0]);
@@ -279,14 +324,18 @@ static int otp_print_puf(uint32_t offset, int w_count)
 	uint16_t ret[1];
 	int rc;
 
-	if (offset + w_count > range)
+	if (offset + w_count > range) {
+		otp_err("offset+count 0x%x exceeds region size 0x%x", offset + w_count, range);
 		return OTP_USAGE;
+	}
 
 	printf("PUF: 0x%x~0x%x\n", offset, offset + w_count);
 	for (int i = offset; i < offset + w_count; i++) {
 		rc = otp_read_swpuf(i, &ret[0]);
-		if (rc)
+		if (rc) {
+			otp_err("OTP read failed at word offset 0x%x, ret=%d", i, rc);
 			return rc;
+		}
 
 		if (i % 8 == 0)
 			printf("\n%03X: %04X ", i * 2, ret[0]);
@@ -2045,21 +2094,25 @@ out:
 
 static int do_otpinfo(int argc, char *const argv[])
 {
-	if (argc != 2 && argc != 3)
+	if (argc != 2 && argc != 3) {
+		otp_err("otp info: bad argc %d", argc);
 		return CMD_RET_USAGE;
+	}
 
-	if (!strcmp(argv[1], "rbp"))
+	if (!strcmp(argv[1], "rbp")) {
 		otp_print_rbp_info();
-	else if (!strcmp(argv[1], "conf"))
+	} else if (!strcmp(argv[1], "conf")) {
 		otp_print_conf_info();
-	else if (!strcmp(argv[1], "strap"))
+	} else if (!strcmp(argv[1], "strap")) {
 		otp_print_strap_info();
-	else if (!strcmp(argv[1], "strap-ext"))
+	} else if (!strcmp(argv[1], "strap-ext")) {
 		otp_print_strap_ext_info();
-	else if (!strcmp(argv[1], "key"))
+	} else if (!strcmp(argv[1], "key")) {
 		otp_print_key_info();
-	else
+	} else {
+		otp_err("otp info: unknown region '%s'", argv[1]);
 		return CMD_RET_USAGE;
+	}
 
 	return CMD_RET_SUCCESS;
 }
@@ -2069,8 +2122,6 @@ static int do_otpread(int argc, char *const argv[])
 	uint32_t offset, count;
 	int ret;
 
-	printf("%s: %d: %s %s %s\n", __func__, argc, argv[1], argv[2], argv[3]);
-
 	if (argc == 4) {
 		offset = (uint32_t)strtoul(argv[2], NULL, 16);
 		count = (uint32_t)strtoul(argv[3], NULL, 16);
@@ -2078,33 +2129,36 @@ static int do_otpread(int argc, char *const argv[])
 		offset = (uint32_t)strtoul(argv[2], NULL, 16);
 		count = 1;
 	} else {
+		otp_err("otp read: bad argc %d", argc);
 		return CMD_RET_USAGE;
 	}
 
-	if (!strcmp(argv[1], "rom"))
+	if (!strcmp(argv[1], "rom")) {
 		ret = otp_print_rom(offset, count);
-	else if (!strcmp(argv[1], "rbp"))
+	} else if (!strcmp(argv[1], "rbp")) {
 		ret = otp_print_rbp(offset, count);
-	else if (!strcmp(argv[1], "conf"))
+	} else if (!strcmp(argv[1], "conf")) {
 		ret = otp_print_conf(offset, count);
-	else if (!strcmp(argv[1], "strap"))
+	} else if (!strcmp(argv[1], "strap")) {
 		ret = otp_print_strap(offset, count);
-	else if (!strcmp(argv[1], "strap-pro"))
+	} else if (!strcmp(argv[1], "strap-pro")) {
 		ret = otp_print_strap_pro(offset, count);
-	else if (!strcmp(argv[1], "strap-ext"))
+	} else if (!strcmp(argv[1], "strap-ext")) {
 		ret = otp_print_strap_ext(offset, count);
-	else if (!strcmp(argv[1], "strap-ext-vld"))
+	} else if (!strcmp(argv[1], "strap-ext-vld")) {
 		ret = otp_print_strap_ext_valid(offset, count);
-	else if (!strcmp(argv[1], "u-data"))
+	} else if (!strcmp(argv[1], "u-data")) {
 		ret = otp_print_user_data(offset, count);
-	else if (!strcmp(argv[1], "s-data"))
+	} else if (!strcmp(argv[1], "s-data")) {
 		ret = otp_print_sec_data(offset, count);
-	else if (!strcmp(argv[1], "cptra"))
+	} else if (!strcmp(argv[1], "cptra")) {
 		ret = otp_print_cptra(offset, count);
-	else if (!strcmp(argv[1], "puf"))
+	} else if (!strcmp(argv[1], "puf")) {
 		ret = otp_print_puf(offset, count);
-	else
+	} else {
+		otp_err("otp read: unknown region '%s'", argv[1]);
 		return CMD_RET_USAGE;
+	}
 
 	if (ret == OTP_SUCCESS)
 		return CMD_RET_SUCCESS;
@@ -2285,8 +2339,10 @@ static int do_otpprog(int argc, char *const argv[])
 		next++;
 	}
 
-	if (argc != next + 1)
+	if (argc != next + 1) {
+		otp_err("otp prog: bad argc %d", argc);
 		return CMD_RET_USAGE;
+	}
 
 	path = argv[next];
 
@@ -2527,8 +2583,10 @@ static int otp_pb_strap_ext_word(int mode, const char *bit_offset_str, const cha
 		return ret;
 
 	value = strtoul(value_str, &endp, 16);
-	if (endp == value_str || *endp != '\0')
+	if (endp == value_str || *endp != '\0') {
+		otp_err("value must be a valid hex number");
 		return OTP_USAGE;
+	}
 
 	return otp_prog_data(mode, bit_offset / 16, 0, value, nconfirm, true);
 }
@@ -2562,13 +2620,15 @@ static int do_otppb(int argc, char *const argv[])
 			next++;
 		}
 
-		if (argc == next)
+		if (argc == next) {
 			ret = otp_pb_strap_ext_interactive(OTP_REGION_STRAP_EXT, nconfirm, force);
-		else if (argc == next + 2)
+		} else if (argc == next + 2) {
 			ret = otp_pb_strap_ext_word(OTP_REGION_STRAP_EXT, argv[next],
 						argv[next + 1], nconfirm, force);
-		else
+		} else {
+			otp_err("otp pb strap-ext: bad argc %d", argc);
 			return CMD_RET_USAGE;
+		}
 
 		goto end;
 	}
@@ -2585,14 +2645,16 @@ static int do_otppb(int argc, char *const argv[])
 			next++;
 		}
 
-		if (argc == next)
+		if (argc == next) {
 			ret = otp_pb_strap_ext_interactive(OTP_REGION_STRAP_EXT_VLD, nconfirm,
 							    force);
-		else if (argc == next + 2)
+		} else if (argc == next + 2) {
 			ret = otp_pb_strap_ext_word(OTP_REGION_STRAP_EXT_VLD, argv[next],
 						argv[next + 1], nconfirm, force);
-		else
+		} else {
+			otp_err("otp pb strap-ext-vld: bad argc %d", argc);
 			return CMD_RET_USAGE;
+		}
 
 		goto end;
 	}
@@ -2606,22 +2668,24 @@ static int do_otppb(int argc, char *const argv[])
 	argc--;
 	argv++;
 
-	if (!strcmp(argv[0], "conf"))
+	if (!strcmp(argv[0], "conf")) {
 		mode = OTP_REGION_CONF;
-	else if (!strcmp(argv[0], "rbp"))
+	} else if (!strcmp(argv[0], "rbp")) {
 		mode = OTP_REGION_RBP;
-	else if (!strcmp(argv[0], "strap"))
+	} else if (!strcmp(argv[0], "strap")) {
 		mode = OTP_REGION_STRAP;
-	else if (!strcmp(argv[0], "strap-ext-vld"))
+	} else if (!strcmp(argv[0], "strap-ext-vld")) {
 		mode = OTP_REGION_STRAP_EXT_VLD;
-	else if (!strcmp(argv[0], "u-data"))
+	} else if (!strcmp(argv[0], "u-data")) {
 		mode = OTP_REGION_USER;
-	else if (!strcmp(argv[0], "s-data"))
+	} else if (!strcmp(argv[0], "s-data")) {
 		mode = OTP_REGION_SECURE;
-	else if (!strcmp(argv[0], "cptra"))
+	} else if (!strcmp(argv[0], "cptra")) {
 		mode = OTP_REGION_CALIPTRA;
-	else
+	} else {
+		otp_err("otp pb: unknown region '%s'", argv[0]);
 		return CMD_RET_USAGE;
+	}
 
 	/* Drop the region cmd */
 	argc--;
@@ -2637,12 +2701,21 @@ static int do_otppb(int argc, char *const argv[])
 	}
 
 	if (mode == OTP_REGION_STRAP) {
+		if (argc != 2) {
+			otp_err("otp pb strap: bad argc %d", argc);
+			return CMD_RET_USAGE;
+		}
+
 		bit_offset = (int)strtoul(argv[0], NULL, 16);
 		value = (int)strtoul(argv[1], NULL, 16);
-		if (bit_offset >= 32)
+		if (bit_offset >= 32) {
+			otp_err("bit_offset 0x%x must be < 0x20", bit_offset);
 			return CMD_RET_USAGE;
-		if (value != 0 && value != 1)
+		}
+		if (value != 0 && value != 1) {
+			otp_err("value must be 0 or 1");
 			return CMD_RET_USAGE;
+		}
 
 	} else if (mode == OTP_REGION_STRAP_EXT_VLD) {
 		/* do_otppb()'s top-level interception only lets "all" [o] [f] reach here */
@@ -2656,8 +2729,10 @@ static int do_otppb(int argc, char *const argv[])
 			next++;
 		}
 
-		if (argc != next)
+		if (argc != next) {
+			otp_err("otp pb strap-ext-vld all: bad argc %d", argc);
 			return CMD_RET_USAGE;
+		}
 
 		for (int i = 0; i < 8; i++) {
 			ret = otp_pb_check_repeat(mode, i, force);
@@ -2684,21 +2759,42 @@ static int do_otppb(int argc, char *const argv[])
 		goto end;
 
 	} else {
+		if (argc != 3) {
+			otp_err("otp pb: bad argc %d", argc);
+			return CMD_RET_USAGE;
+		}
+
 		otp_addr = (int)strtoul(argv[0], NULL, 16);
 		bit_offset = (int)strtoul(argv[1], NULL, 16);
 		value = (int)strtoul(argv[2], NULL, 16);
-		if (bit_offset >= 16)
+		if (bit_offset >= 16) {
+			otp_err("bit_offset 0x%x must be < 0x10", bit_offset);
 			return CMD_RET_USAGE;
+		}
+		/*
+		 * value << bit_offset must still fit in the 16-bit word:
+		 * otp_prog_data() silently truncates anything past bit 15,
+		 * which would otherwise burn the wrong pattern with no
+		 * warning - and OTP can't be unburned.
+		 */
+		if (value > (0xffffU >> bit_offset)) {
+			otp_err("value 0x%x too large for bit_offset 0x%x", value, bit_offset);
+			return CMD_RET_USAGE;
+		}
 	}
 
 	/* Check param */
 	if (mode == OTP_REGION_RBP) {
-		if (otp_addr >= OTP_RBP_REGION_SIZE)
+		if (otp_addr >= OTP_RBP_REGION_SIZE) {
+			otp_err("otp_addr 0x%x must be < 0x%x", otp_addr, OTP_RBP_REGION_SIZE);
 			return CMD_RET_USAGE;
+		}
 
 	} else if (mode == OTP_REGION_CONF) {
-		if (otp_addr >= OTP_CONF_REGION_SIZE)
+		if (otp_addr >= OTP_CONF_REGION_SIZE) {
+			otp_err("otp_addr 0x%x must be < 0x%x", otp_addr, OTP_CONF_REGION_SIZE);
 			return CMD_RET_USAGE;
+		}
 
 	} else if (mode == OTP_REGION_STRAP) {
 		// get otpstrap status
@@ -2719,16 +2815,22 @@ static int do_otppb(int argc, char *const argv[])
 		value = 1;
 
 	} else if (mode == OTP_REGION_USER) {
-		if (otp_addr >= OTP_USER_REGION_SIZE)
+		if (otp_addr >= OTP_USER_REGION_SIZE) {
+			otp_err("otp_addr 0x%x must be < 0x%x", otp_addr, OTP_USER_REGION_SIZE);
 			return CMD_RET_USAGE;
+		}
 
 	} else if (mode == OTP_REGION_SECURE) {
-		if (otp_addr >= OTP_SEC_REGION_SIZE)
+		if (otp_addr >= OTP_SEC_REGION_SIZE) {
+			otp_err("otp_addr 0x%x must be < 0x%x", otp_addr, OTP_SEC_REGION_SIZE);
 			return CMD_RET_USAGE;
+		}
 
 	} else if (mode == OTP_REGION_CALIPTRA) {
-		if (otp_addr >= OTP_CAL_REGION_SIZE)
+		if (otp_addr >= OTP_CAL_REGION_SIZE) {
+			otp_err("otp_addr 0x%x must be < 0x%x", otp_addr, OTP_CAL_REGION_SIZE);
 			return CMD_RET_USAGE;
+		}
 	}
 
 	ret = otp_pb_check_repeat(mode, otp_addr, force);
@@ -2886,18 +2988,24 @@ static int do_otpecc_policy(int argc, char *const argv[], int global_status)
 	uint32_t ecc_en;
 	int ret;
 
-	if (argc < 1)
+	if (argc < 1) {
+		otp_err("otp ecc policy: missing subcommand");
 		return CMD_RET_USAGE;
+	}
 
 	if (!strcmp(argv[0], "dump")) {
-		if (argc != 1)
+		if (argc != 1) {
+			otp_err("otp ecc policy dump: bad argc %d", argc);
 			return CMD_RET_USAGE;
+		}
 
 		return otp_ecc_policy_dump_all(global_status);
 
 	} else if (!strcmp(argv[0], "set")) {
-		if (argc != 3)
+		if (argc != 3) {
+			otp_err("otp ecc policy set: bad argc %d", argc);
 			return CMD_RET_USAGE;
+		}
 
 		if (global_status == OTP_ECC_GLOBAL_HW_ENABLED) {
 			printf("OTP ECC policy cannot be set: hardware strap forces global ECC on\n");
@@ -2939,6 +3047,7 @@ static int do_otpecc_policy(int argc, char *const argv[], int global_status)
 		return otp_ecc_policy_dump_all(global_status);
 	}
 
+	otp_err("otp ecc policy: unknown subcommand '%s'", argv[0]);
 	return CMD_RET_USAGE;
 }
 
@@ -2947,8 +3056,10 @@ static int do_otpecc(int argc, char *const argv[])
 	int ret;
 	int global_status = OTP_ECC_GLOBAL_DISABLED;
 
-	if (argc < 2)
+	if (argc < 2) {
+		otp_err("otp ecc: missing subcommand");
 		return CMD_RET_USAGE;
+	}
 
 	/* Get ECC status */
 	ret = otp_ecc_get_status(&global_status);
@@ -3046,8 +3157,10 @@ static int do_otpecc(int argc, char *const argv[])
 	} else if (!strcmp(argv[0], "hw-enable")) {
 		int nconfirm = (argc == 2 && !strcmp(argv[1], "o"));
 
-		if (argc != 1 && !nconfirm)
+		if (argc != 1 && !nconfirm) {
+			otp_err("otp ecc hw-enable: bad argc %d", argc);
 			return CMD_RET_USAGE;
+		}
 
 		return otp_ecc_hw_enable(nconfirm);
 
@@ -3059,6 +3172,7 @@ static int do_otpecc(int argc, char *const argv[])
 		return do_otpecc_policy(argc, argv, global_status);
 
 	} else {
+		otp_err("otp ecc: unknown subcommand '%s'", argv[0]);
 		return CMD_RET_USAGE;
 	}
 
@@ -3175,7 +3289,7 @@ int main(int argc, char *argv[])
 	printf("OTP driver: %s\n", info_cb.otp_fd >= 0 ? "native (CA35 direct)" : "IPC (via BOOTMCU)");
 
 	if (strcmp(argv[1], "0") && strcmp(argv[1], "1")) {
-		printf("Invalid otp device %s, only support 0 and 1\n", argv[1]);
+		otp_err("Invalid otp device %s, only support 0 and 1", argv[1]);
 		ret = OTP_USAGE;
 		goto end;
 	}
@@ -3185,8 +3299,13 @@ int main(int argc, char *argv[])
 	argv++;
 
 	cp = find_cmd_tbl(argv[1], cmd_otp, ARRAY_SIZE(cmd_otp));
-	if (!cp || argc > cp->maxargs) {
-		printf("%s is not supported, argc:%d (max:%d)\n", argv[1], argc, cp->maxargs);
+	if (!cp) {
+		otp_err("otp: unknown subcommand '%s'", argv[1]);
+		ret = OTP_USAGE;
+		goto end;
+	}
+	if (argc > cp->maxargs) {
+		otp_err("otp %s: too many arguments (%d)", argv[1], argc);
 		ret = OTP_USAGE;
 		goto end;
 	}

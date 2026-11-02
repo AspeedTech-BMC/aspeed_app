@@ -685,13 +685,72 @@ int otp_prog_data(int mode, int otp_w_offset, int bit_offset,
 	return OTP_SUCCESS;
 }
 
-int otp_prog_image_region(struct otp_image_layout *image_layout, enum otp_region region_type)
+/* Maps otp_prog_data()'s otp_region to its ECC-policy region ID. */
+static int otp_prog_region_ecc_id(int mode, uint32_t *id)
+{
+	switch (mode) {
+	case OTP_REGION_ROM:
+		*id = OTP_REGION_ID_ROM;
+		break;
+	case OTP_REGION_RBP:
+		*id = OTP_REGION_ID_RBP;
+		break;
+	case OTP_REGION_CONF:
+		*id = OTP_REGION_ID_CFG;
+		break;
+	case OTP_REGION_STRAP:
+		*id = OTP_REGION_ID_STRAP;
+		break;
+	case OTP_REGION_STRAP_EXT:
+	case OTP_REGION_STRAP_EXT_VLD:
+		*id = OTP_REGION_ID_STRAPEXT;
+		break;
+	case OTP_REGION_USER:
+		*id = OTP_REGION_ID_USR;
+		break;
+	case OTP_REGION_SECURE:
+		*id = OTP_REGION_ID_SEC;
+		break;
+	case OTP_REGION_CALIPTRA:
+		*id = OTP_REGION_ID_CAL;
+		break;
+	default:
+		return -1;
+	}
+
+	return 0;
+}
+
+/* Whether this region's ECC is currently active (global force or its own policy). */
+static int otp_region_ecc_active(int mode, bool *active)
+{
+	uint32_t region_id;
+	int global_status;
+	uint32_t ecc_en = 0, ecc_supported = 0;
+
+	*active = false;
+
+	if (otp_prog_region_ecc_id(mode, &region_id) ||
+	    otp_ecc_get_status(&global_status) ||
+	    otp_get_ecc_policy(region_id, &ecc_en, &ecc_supported))
+		return -1;
+
+	*active = ecc_supported && (global_status != OTP_ECC_GLOBAL_DISABLED || ecc_en);
+
+	return 0;
+}
+
+int otp_prog_image_region(struct otp_image_layout *image_layout, enum otp_region region_type,
+			  bool force)
 {
 	int (*otp_read_func)(uint32_t offset, uint16_t *data);
 	uint16_t otp_value;
 	uint16_t *buf;
 	int size, w_region_size;
 	int ret;
+	bool ecc_active;
+
+	otp_region_ecc_active(region_type, &ecc_active);
 
 	switch (region_type) {
 	case OTP_REGION_ROM:
@@ -767,9 +826,18 @@ int otp_prog_image_region(struct otp_image_layout *image_layout, enum otp_region
 		/* Show warning if OTP value is not 0 and different from image data,
 		 * which may indicate the OTP bit has been programmed before
 		 */
-		if (otp_value && otp_value != buf[i])
+		if (otp_value && otp_value != buf[i]) {
+			if (ecc_active && !force) {
+				printf("ERROR: OTP region w_offset [0x%x]=0x%x already programmed and this\n",
+				       i, otp_value);
+				printf("region's ECC is active - programming 0x%x on top of it would corrupt\n",
+				       buf[i]);
+				printf("its ECC parity. Pass \"f\" to force programming anyway.\n");
+				return OTP_FAILURE;
+			}
 			printf("Warning: OTP region w_offset [0x%x]=0x%x prog to 0x%x\n",
 			       i, otp_value, buf[i]);
+		}
 
 		ret = otp_prog_data(region_type, i, 0, buf[i], 1, false);
 		if (ret) {
@@ -849,14 +917,17 @@ int otp_prog_strap_image(struct otp_image_layout *image_layout,
 	return OTP_SUCCESS;
 }
 
-int otp_prog_strap_ext_image(struct otp_image_layout *image_layout)
+int otp_prog_strap_ext_image(struct otp_image_layout *image_layout, bool force)
 {
 	uint16_t *strap_ext;
 	uint16_t *strap_ext_vld;
+	bool ecc_active;
 	int ret;
 
 	strap_ext = (uint16_t *)image_layout->strap_ext;
 	strap_ext_vld = strap_ext + 8;
+
+	otp_region_ecc_active(OTP_REGION_STRAP_EXT, &ecc_active);
 
 	/*
 	 * One otp_prog_data() call per word, not per bit: STRAP_EXT supports
@@ -866,6 +937,24 @@ int otp_prog_strap_ext_image(struct otp_image_layout *image_layout)
 	printf("Start Programming...\n");
 	for (int w_offset = 0; w_offset < 8; w_offset++) {
 		if (strap_ext[w_offset]) {
+			uint16_t current = 0;
+
+			if (otp_read_strap_ext(w_offset, &current)) {
+				if (!force) {
+					printf("ERROR: could not read OTPSTRAPEXT word 0x%x to check for an ECC\n",
+					       w_offset);
+					printf("conflict - refusing to program it blind. Pass \"f\" to force anyway.\n");
+					return OTP_FAILURE;
+				}
+			} else if (current && current != strap_ext[w_offset] && ecc_active && !force) {
+				printf("ERROR: OTPSTRAPEXT word 0x%x=0x%x already programmed and ECC is active -\n",
+				       w_offset, current);
+				printf("programming 0x%x on top of it would corrupt its ECC parity.\n",
+				       strap_ext[w_offset]);
+				printf("Pass \"f\" to force programming anyway.\n");
+				return OTP_FAILURE;
+			}
+
 			ret = otp_prog_data(OTP_REGION_STRAP_EXT, w_offset, 0,
 					    strap_ext[w_offset], 1, false);
 			if (ret)
@@ -873,6 +962,24 @@ int otp_prog_strap_ext_image(struct otp_image_layout *image_layout)
 		}
 
 		if (strap_ext_vld[w_offset]) {
+			uint16_t current = 0;
+
+			if (otp_read_strap_ext_vld(w_offset, &current)) {
+				if (!force) {
+					printf("ERROR: could not read OTPSTRAPEXT_VLD word 0x%x to check for an ECC\n",
+					       w_offset);
+					printf("conflict - refusing to program it blind. Pass \"f\" to force anyway.\n");
+					return OTP_FAILURE;
+				}
+			} else if (current && current != strap_ext_vld[w_offset] && ecc_active && !force) {
+				printf("ERROR: OTPSTRAPEXT_VLD word 0x%x=0x%x already programmed and ECC is\n",
+				       w_offset, current);
+				printf("active - programming 0x%x on top of it would corrupt its ECC parity.\n",
+				       strap_ext_vld[w_offset]);
+				printf("Pass \"f\" to force programming anyway.\n");
+				return OTP_FAILURE;
+			}
+
 			ret = otp_prog_data(OTP_REGION_STRAP_EXT_VLD, w_offset, 0,
 					    strap_ext_vld[w_offset], 1, false);
 			if (ret)

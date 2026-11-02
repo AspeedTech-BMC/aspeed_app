@@ -1125,7 +1125,7 @@ static int otp_check_strap_image(struct otp_image_layout *image_layout,
 	return OTP_SUCCESS;
 }
 
-static int otp_prog_image(char *path, int nconfirm)
+static int otp_prog_image(char *path, int nconfirm, bool ecc_force)
 {
 	struct otp_image_layout image_layout;
 	struct otpstrap_status otpstrap[32];
@@ -1355,7 +1355,7 @@ static int otp_prog_image(char *path, int nconfirm)
 
 	if (otp_header->image_info & OTP_INC_ROM) {
 		printf("programing rom region ...\n");
-		ret = otp_prog_image_region(&image_layout, OTP_REGION_ROM);
+		ret = otp_prog_image_region(&image_layout, OTP_REGION_ROM, ecc_force);
 		if (ret) {
 			printf("Error\n");
 			goto end;
@@ -1363,7 +1363,7 @@ static int otp_prog_image(char *path, int nconfirm)
 	}
 	if (otp_header->image_info & OTP_INC_RBP) {
 		printf("programing rbp region ...\n");
-		ret = otp_prog_image_region(&image_layout, OTP_REGION_RBP);
+		ret = otp_prog_image_region(&image_layout, OTP_REGION_RBP, ecc_force);
 		if (ret) {
 			printf("Error\n");
 			goto end;
@@ -1371,7 +1371,7 @@ static int otp_prog_image(char *path, int nconfirm)
 	}
 	if (otp_header->image_info & OTP_INC_SECURE) {
 		printf("programing secure region ...\n");
-		ret = otp_prog_image_region(&image_layout, OTP_REGION_SECURE);
+		ret = otp_prog_image_region(&image_layout, OTP_REGION_SECURE, ecc_force);
 		if (ret) {
 			printf("Error\n");
 			goto end;
@@ -1379,7 +1379,7 @@ static int otp_prog_image(char *path, int nconfirm)
 	}
 	if (otp_header->image_info & OTP_INC_CONFIG) {
 		printf("programing configuration region ...\n");
-		ret = otp_prog_image_region(&image_layout, OTP_REGION_CONF);
+		ret = otp_prog_image_region(&image_layout, OTP_REGION_CONF, ecc_force);
 		if (ret != 0) {
 			printf("Error\n");
 			goto end;
@@ -1395,7 +1395,7 @@ static int otp_prog_image(char *path, int nconfirm)
 	}
 	if (otp_header->image_info & OTP_INC_STRAP_EXT) {
 		printf("programing strap extension region ...\n");
-		ret = otp_prog_strap_ext_image(&image_layout);
+		ret = otp_prog_strap_ext_image(&image_layout, ecc_force);
 		if (ret != 0) {
 			printf("Error\n");
 			goto end;
@@ -1403,7 +1403,7 @@ static int otp_prog_image(char *path, int nconfirm)
 	}
 	if (otp_header->image_info & OTP_INC_CALIPTRA) {
 		printf("programing caliptra region ...\n");
-		ret = otp_prog_image_region(&image_layout, OTP_REGION_CALIPTRA);
+		ret = otp_prog_image_region(&image_layout, OTP_REGION_CALIPTRA, ecc_force);
 		if (ret != 0) {
 			printf("Error\n");
 			goto end;
@@ -1411,7 +1411,7 @@ static int otp_prog_image(char *path, int nconfirm)
 	}
 	if (otp_header->image_info & OTP_INC_USER) {
 		printf("programing user region ...\n");
-		ret = otp_prog_image_region(&image_layout, OTP_REGION_USER);
+		ret = otp_prog_image_region(&image_layout, OTP_REGION_USER, ecc_force);
 		if (ret != 0) {
 			printf("Error\n");
 			goto end;
@@ -2269,31 +2269,133 @@ static int do_otppatch(int argc, char *const argv[])
 
 static int do_otpprog(int argc, char *const argv[])
 {
-	int ret, force = 0;
+	int ret, nconfirm = 0;
+	/* "f": force past otp_prog_image_region()/otp_prog_strap_ext_image()'s
+	 * incremental-program ECC warning
+	 */
+	bool ecc_force = false;
 	char *path;
+	int next = 1;
 
-	if (argc == 3) {
-		if (strcmp(argv[1], "o"))
-			return CMD_RET_USAGE;
-
-		path = argv[2];
-		force = 1;
-
-	} else if (argc == 2) {
-		path = argv[1];
-		force = 0;
-
-	} else {
-		return CMD_RET_USAGE;
+	while (argc > next && (!strcmp(argv[next], "o") || !strcmp(argv[next], "f"))) {
+		if (!strcmp(argv[next], "o"))
+			nconfirm = 1;
+		else
+			ecc_force = true;
+		next++;
 	}
 
-	ret = otp_prog_image(path, force);
+	if (argc != next + 1)
+		return CMD_RET_USAGE;
+
+	path = argv[next];
+
+	ret = otp_prog_image(path, nconfirm, ecc_force);
 	if (ret == OTP_SUCCESS)
 		return CMD_RET_SUCCESS;
 	else if (ret == OTP_FAILURE)
 		return CMD_RET_FAILURE;
 	else
 		return CMD_RET_USAGE;
+}
+
+/* Maps otp_prog_data()'s otp_region to its ECC-policy region ID. */
+static int otp_prog_region_ecc_id(int mode, uint32_t *id)
+{
+	switch (mode) {
+	case OTP_REGION_ROM:
+		*id = OTP_REGION_ID_ROM;
+		break;
+	case OTP_REGION_RBP:
+		*id = OTP_REGION_ID_RBP;
+		break;
+	case OTP_REGION_CONF:
+		*id = OTP_REGION_ID_CFG;
+		break;
+	case OTP_REGION_STRAP:
+		*id = OTP_REGION_ID_STRAP;
+		break;
+	case OTP_REGION_STRAP_EXT:
+	case OTP_REGION_STRAP_EXT_VLD:
+		*id = OTP_REGION_ID_STRAPEXT;
+		break;
+	case OTP_REGION_USER:
+		*id = OTP_REGION_ID_USR;
+		break;
+	case OTP_REGION_SECURE:
+		*id = OTP_REGION_ID_SEC;
+		break;
+	case OTP_REGION_CALIPTRA:
+		*id = OTP_REGION_ID_CAL;
+		break;
+	default:
+		return -1;
+	}
+
+	return 0;
+}
+
+/* Reads otp_w_offset's current value for whichever region otp_region selects. */
+static int otp_prog_read_current(int mode, int otp_w_offset, uint16_t *value)
+{
+	switch (mode) {
+	case OTP_REGION_ROM:
+		return otp_read_rom(otp_w_offset, value);
+	case OTP_REGION_RBP:
+		return otp_read_rbp(otp_w_offset, value);
+	case OTP_REGION_CONF:
+		return otp_read_conf(otp_w_offset, value);
+	case OTP_REGION_STRAP:
+		return otp_read_strap(otp_w_offset, value);
+	case OTP_REGION_STRAP_EXT:
+		return otp_read_strap_ext(otp_w_offset, value);
+	case OTP_REGION_STRAP_EXT_VLD:
+		return otp_read_strap_ext_vld(otp_w_offset, value);
+	case OTP_REGION_USER:
+		return otp_read_udata(otp_w_offset, value);
+	case OTP_REGION_SECURE:
+		return otp_read_sdata(otp_w_offset, value);
+	case OTP_REGION_CALIPTRA:
+		return otp_read_cptra(otp_w_offset, value);
+	default:
+		return -1;
+	}
+}
+
+/*
+ * otp pb's safety net against incremental-program ECC corruption: if this
+ * word already has data and this region's ECC is active, programming it
+ * again would corrupt the parity locked in by whichever write set those
+ * bits, with no indication beyond a later ECC read error. Refuse unless the
+ * caller passed "f" to force it anyway.
+ */
+static int otp_pb_check_repeat(int mode, int otp_w_offset, bool force)
+{
+	uint16_t current = 0;
+	uint32_t region_id;
+	int global_status;
+	uint32_t ecc_en = 0, ecc_supported = 0;
+
+	if (force)
+		return OTP_SUCCESS;
+
+	if (otp_prog_read_current(mode, otp_w_offset, &current) || !current)
+		return OTP_SUCCESS;
+
+	if (otp_prog_region_ecc_id(mode, &region_id) ||
+	    otp_ecc_get_status(&global_status) ||
+	    otp_get_ecc_policy(region_id, &ecc_en, &ecc_supported))
+		return OTP_SUCCESS;
+
+	if (!ecc_supported || (global_status == OTP_ECC_GLOBAL_DISABLED && !ecc_en))
+		return OTP_SUCCESS;
+
+	printf("Warning: word 0x%x already has data 0x%x and this region's ECC is active -\n",
+	       otp_w_offset, current);
+	printf("programming it again risks corrupting its ECC parity.\n");
+	printf("Pass \"f\" to force programming anyway.\n");
+
+	return OTP_FAILURE;
 }
 
 /*
@@ -2303,7 +2405,7 @@ static int do_otpprog(int argc, char *const argv[])
  * value, collect every bit first, then program each word exactly once -
  * see otp_pb_strap_ext_word() for the non-interactive counterpart.
  */
-static int otp_pb_strap_ext_interactive(int mode, int nconfirm)
+static int otp_pb_strap_ext_interactive(int mode, int nconfirm, bool force)
 {
 	const char *label = mode == OTP_REGION_STRAP_EXT_VLD ? "OTPSTRAPEXT_VLD" : "OTPSTRAPEXT";
 	uint16_t word_value[8] = {0};
@@ -2357,6 +2459,15 @@ static int otp_pb_strap_ext_interactive(int mode, int nconfirm)
 			printf("  word 0x%x = 0x%04x\n", w, word_value[w]);
 	}
 
+	for (int w = 0; w < 8; w++) {
+		if (!word_dirty[w])
+			continue;
+
+		ret = otp_pb_check_repeat(mode, w, force);
+		if (ret)
+			return OTP_FAILURE;
+	}
+
 	if (!nconfirm) {
 		printf("type \"YES\" (no quotes) to continue:\n");
 		if (!confirm_yesno()) {
@@ -2374,6 +2485,19 @@ static int otp_pb_strap_ext_interactive(int mode, int nconfirm)
 			return OTP_FAILURE;
 	}
 
+	printf("\nProgram successful. Current %s values:\n", label);
+	for (int w = 0; w < 8; w++) {
+		uint16_t readback;
+
+		if (!word_dirty[w])
+			continue;
+
+		if (otp_prog_read_current(mode, w, &readback))
+			printf("  word 0x%x: failed to read back\n", w);
+		else
+			printf("  word 0x%x = 0x%04x\n", w, readback);
+	}
+
 	return OTP_SUCCESS;
 }
 
@@ -2384,11 +2508,12 @@ static int otp_pb_strap_ext_interactive(int mode, int nconfirm)
  * the whole word is always programmed in a single otp_prog_data() call.
  */
 static int otp_pb_strap_ext_word(int mode, const char *bit_offset_str, const char *value_str,
-				 int nconfirm)
+				 int nconfirm, bool force)
 {
 	char *endp;
 	uint32_t bit_offset;
 	uint32_t value;
+	int ret;
 
 	bit_offset = strtoul(bit_offset_str, &endp, 16);
 	if (endp == bit_offset_str || *endp != '\0' || bit_offset >= 128 ||
@@ -2396,6 +2521,10 @@ static int otp_pb_strap_ext_word(int mode, const char *bit_offset_str, const cha
 		printf("bit_offset must be a word-aligned (multiple of 16) hex number < 0x80\n");
 		return OTP_USAGE;
 	}
+
+	ret = otp_pb_check_repeat(mode, bit_offset / 16, force);
+	if (ret)
+		return ret;
 
 	value = strtoul(value_str, &endp, 16);
 	if (endp == value_str || *endp != '\0')
@@ -2419,20 +2548,25 @@ static int do_otppb(int argc, char *const argv[])
 	uint32_t bit_offset;
 	uint32_t value;
 	int ret;
+	/* "f": force past otp_pb_check_repeat()'s incremental-program ECC warning */
+	bool force = false;
 
 	if (argc >= 2 && !strcmp(argv[1], "strap-ext")) {
 		int next = 2;
 
-		if (argc > next && !strcmp(argv[next], "o")) {
-			nconfirm = 1;
+		while (argc > next && (!strcmp(argv[next], "o") || !strcmp(argv[next], "f"))) {
+			if (!strcmp(argv[next], "o"))
+				nconfirm = 1;
+			else
+				force = true;
 			next++;
 		}
 
 		if (argc == next)
-			ret = otp_pb_strap_ext_interactive(OTP_REGION_STRAP_EXT, nconfirm);
+			ret = otp_pb_strap_ext_interactive(OTP_REGION_STRAP_EXT, nconfirm, force);
 		else if (argc == next + 2)
 			ret = otp_pb_strap_ext_word(OTP_REGION_STRAP_EXT, argv[next],
-						argv[next + 1], nconfirm);
+						argv[next + 1], nconfirm, force);
 		else
 			return CMD_RET_USAGE;
 
@@ -2443,23 +2577,27 @@ static int do_otppb(int argc, char *const argv[])
 	    !(argc >= 3 && !strcmp(argv[2], "all"))) {
 		int next = 2;
 
-		if (argc > next && !strcmp(argv[next], "o")) {
-			nconfirm = 1;
+		while (argc > next && (!strcmp(argv[next], "o") || !strcmp(argv[next], "f"))) {
+			if (!strcmp(argv[next], "o"))
+				nconfirm = 1;
+			else
+				force = true;
 			next++;
 		}
 
 		if (argc == next)
-			ret = otp_pb_strap_ext_interactive(OTP_REGION_STRAP_EXT_VLD, nconfirm);
+			ret = otp_pb_strap_ext_interactive(OTP_REGION_STRAP_EXT_VLD, nconfirm,
+							    force);
 		else if (argc == next + 2)
 			ret = otp_pb_strap_ext_word(OTP_REGION_STRAP_EXT_VLD, argv[next],
-						argv[next + 1], nconfirm);
+						argv[next + 1], nconfirm, force);
 		else
 			return CMD_RET_USAGE;
 
 		goto end;
 	}
 
-	if (argc != 3 && argc != 4 && argc != 5 && argc != 6) {
+	if (argc != 3 && argc != 4 && argc != 5 && argc != 6 && argc != 7) {
 		printf("%s: argc:%d\n", __func__, argc);
 		return CMD_RET_USAGE;
 	}
@@ -2489,9 +2627,11 @@ static int do_otppb(int argc, char *const argv[])
 	argc--;
 	argv++;
 
-	if (!strcmp(argv[0], "o")) {
-		nconfirm = 1;
-		/* Drop the force option */
+	while (argc > 0 && (!strcmp(argv[0], "o") || !strcmp(argv[0], "f"))) {
+		if (!strcmp(argv[0], "o"))
+			nconfirm = 1;
+		else
+			force = true;
 		argc--;
 		argv++;
 	}
@@ -2505,11 +2645,25 @@ static int do_otppb(int argc, char *const argv[])
 			return CMD_RET_USAGE;
 
 	} else if (mode == OTP_REGION_STRAP_EXT_VLD) {
-		/* do_otppb()'s top-level interception only lets "all" [o] reach here */
-		if (argc == 2 && !strcmp(argv[1], "o"))
-			nconfirm = 1;
-		else if (argc != 1)
+		/* do_otppb()'s top-level interception only lets "all" [o] [f] reach here */
+		int next = 1;
+
+		while (argc > next && (!strcmp(argv[next], "o") || !strcmp(argv[next], "f"))) {
+			if (!strcmp(argv[next], "o"))
+				nconfirm = 1;
+			else
+				force = true;
+			next++;
+		}
+
+		if (argc != next)
 			return CMD_RET_USAGE;
+
+		for (int i = 0; i < 8; i++) {
+			ret = otp_pb_check_repeat(mode, i, force);
+			if (ret)
+				goto end;
+		}
 
 		if (!nconfirm) {
 			printf("This will mark every OTPSTRAPEXT_VLD bit as valid.\n");
@@ -2576,6 +2730,10 @@ static int do_otppb(int argc, char *const argv[])
 		if (otp_addr >= OTP_CAL_REGION_SIZE)
 			return CMD_RET_USAGE;
 	}
+
+	ret = otp_pb_check_repeat(mode, otp_addr, force);
+	if (ret)
+		goto end;
 
 	ret = otp_prog_data(mode, otp_addr, bit_offset, value, nconfirm, true);
 
@@ -2924,8 +3082,8 @@ struct cmd_tbl {
 static struct cmd_tbl cmd_otp[] = {
 	{ "version", 2, do_otpver    },
 	{ "read",    5, do_otpread   },
-	{ "prog",    3, do_otpprog   },
-	{ "pb",      7, do_otppb     },
+	{ "prog",    5, do_otpprog   },
+	{ "pb",      8, do_otppb     },
 	{ "patch",   6, do_otppatch  },
 	{ "ecc",     6, do_otpecc    },
 	{ "info",    3, do_otpinfo   },
@@ -2939,12 +3097,18 @@ static void usage(void)
 	printf("ASPEED One-Time-Programmable sub-system\n"
 	       "\totp <dev> version\n"
 	       "\totp <dev> read rom|rbp|conf|strap|strap-pro|strap-ext|strap-ext-vld|u-data|s-data|cptra|puf <otp_w_offset> <w_count>\n"
-	       "\totp <dev> pb rbp|conf|u-data|s-data|cptra [o] <otp_w_offset> <bit_offset> <value>\n"
+	       "\totp <dev> pb rbp|conf|u-data|s-data|cptra [o] [f] <otp_w_offset> <bit_offset> <value>\n"
 	       "\totp <dev> pb strap [o] <bit_offset> <value>\n"
-	       "\totp <dev> pb strap-ext-vld all [o]\n"
-	       "\totp <dev> pb strap-ext|strap-ext-vld [o] (interactive: enter bit offsets one at a time, \"end\" to finish)\n"
-	       "\totp <dev> pb strap-ext|strap-ext-vld [o] <word-aligned bit_offset> <full word value>\n"
-	       "\totp <dev> prog <addr>\n"
+	       "\totp <dev> pb strap-ext-vld all [o] [f]\n"
+	       "\totp <dev> pb strap-ext|strap-ext-vld [o] [f] (interactive: enter bit offsets one at a time, \"end\" to finish)\n"
+	       "\totp <dev> pb strap-ext|strap-ext-vld [o] [f] <word-aligned bit_offset> <full word value>\n"
+	       "\totp <dev> pb: \"o\" skips the \"type YES\" confirm; \"f\" forces programming anyway when\n"
+	       "\t    the target word already has data and this region's ECC is active (otherwise refused,\n"
+	       "\t    since a second write would corrupt the ECC parity locked in by the first)\n"
+	       "\totp <dev> prog [o] [f] <path>\n"
+	       "\totp <dev> prog: \"o\" skips the \"type YES\" confirm; \"f\" forces programming anyway\n"
+	       "\t    when a region's existing data conflicts with the image while that region's ECC is\n"
+	       "\t    active (otherwise refused, since the second write would corrupt its ECC parity)\n"
 	       "\totp <dev> info key|rbp|conf|strap|strap-ext\n"
 	       "\totp <dev> patch prog <dram_addr> <otp_w_offset> <w_count>\n"
 	       "\totp <dev> patch enable pre|post <otp_start_w_offset> <w_count>\n"

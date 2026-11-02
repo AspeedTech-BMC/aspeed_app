@@ -345,10 +345,11 @@ int otp_prog_data(int mode, int otp_w_offset, int bit_offset,
 		  int value, int nconfirm, bool debug);
 
 int otp_verify_image(uint8_t *src_buf, uint32_t length, uint8_t *digest_buf);
-int otp_prog_image_region(struct otp_image_layout *image_layout, enum otp_region region_type);
+int otp_prog_image_region(struct otp_image_layout *image_layout, enum otp_region region_type,
+			  bool force);
 int otp_prog_strap_image(struct otp_image_layout *image_layout,
 			 struct otpstrap_status *otpstrap);
-int otp_prog_strap_ext_image(struct otp_image_layout *image_layout);
+int otp_prog_strap_ext_image(struct otp_image_layout *image_layout, bool force);
 void otp_strap_status(struct otpstrap_status *otpstrap);
 
 extern struct otp_info_cb info_cb;

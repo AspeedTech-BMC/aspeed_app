@@ -345,7 +345,7 @@ int lib_otp_prog_image(char *path)
 
 	if (otp_header->image_info & OTP_INC_ROM) {
 		printf("programing rom region ...\n");
-		ret = otp_prog_image_region(&image_layout, OTP_REGION_ROM);
+		ret = otp_prog_image_region(&image_layout, OTP_REGION_ROM, false);
 		if (ret) {
 			printf("Error\n");
 			goto end;
@@ -353,7 +353,7 @@ int lib_otp_prog_image(char *path)
 	}
 	if (otp_header->image_info & OTP_INC_RBP) {
 		printf("programing rbp region ...\n");
-		ret = otp_prog_image_region(&image_layout, OTP_REGION_RBP);
+		ret = otp_prog_image_region(&image_layout, OTP_REGION_RBP, false);
 		if (ret) {
 			printf("Error\n");
 			goto end;
@@ -361,7 +361,7 @@ int lib_otp_prog_image(char *path)
 	}
 	if (otp_header->image_info & OTP_INC_SECURE) {
 		printf("programing secure region ...\n");
-		ret = otp_prog_image_region(&image_layout, OTP_REGION_SECURE);
+		ret = otp_prog_image_region(&image_layout, OTP_REGION_SECURE, false);
 		if (ret) {
 			printf("Error\n");
 			goto end;
@@ -369,7 +369,7 @@ int lib_otp_prog_image(char *path)
 	}
 	if (otp_header->image_info & OTP_INC_CONFIG) {
 		printf("programing configuration region ...\n");
-		ret = otp_prog_image_region(&image_layout, OTP_REGION_CONF);
+		ret = otp_prog_image_region(&image_layout, OTP_REGION_CONF, false);
 		if (ret != 0) {
 			printf("Error\n");
 			goto end;
@@ -388,7 +388,7 @@ int lib_otp_prog_image(char *path)
 	}
 	if (otp_header->image_info & OTP_INC_STRAP_EXT) {
 		printf("programing strap extension region ...\n");
-		ret = otp_prog_strap_ext_image(&image_layout);
+		ret = otp_prog_strap_ext_image(&image_layout, false);
 		if (ret != 0) {
 			printf("Error\n");
 			goto end;
@@ -402,7 +402,7 @@ int lib_otp_prog_image(char *path)
 			goto end;
 		}
 
-		ret = otp_prog_image_region(&image_layout, OTP_REGION_CALIPTRA);
+		ret = otp_prog_image_region(&image_layout, OTP_REGION_CALIPTRA, false);
 		otp_ecc_ctrl(false);
 		if (ret != 0) {
 			printf("Error\n");
@@ -411,7 +411,7 @@ int lib_otp_prog_image(char *path)
 	}
 	if (otp_header->image_info & OTP_INC_USER) {
 		printf("programing user region ...\n");
-		ret = otp_prog_image_region(&image_layout, OTP_REGION_USER);
+		ret = otp_prog_image_region(&image_layout, OTP_REGION_USER, false);
 		if (ret != 0) {
 			printf("Error\n");
 			goto end;

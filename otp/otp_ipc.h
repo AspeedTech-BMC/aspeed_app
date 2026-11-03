@@ -56,6 +56,11 @@
  * SET_READ_MODE response: word0 = status
  * Affects every subsequent READ until switched back - used for OTP cell
  * margin-screening diagnostics (otp screen), not part of normal traffic.
+ *
+ * GET_ROM_PATCH_VERSION request:  word1 = pack(OTP_IPC_OP_GET_ROM_PATCH_VERSION, 0)
+ * GET_ROM_PATCH_VERSION response: word0 = status, word1 = raw SCU1 ROM patch
+ * version register value. Decoding differs between A1 and A2, so the raw
+ * value is returned as-is - the caller decodes it.
  */
 
 enum otp_ipc_op {
@@ -67,6 +72,7 @@ enum otp_ipc_op {
 	OTP_IPC_OP_ECC_SET_POLICY,
 	OTP_IPC_OP_GET_REVID,
 	OTP_IPC_OP_SET_READ_MODE,
+	OTP_IPC_OP_GET_ROM_PATCH_VERSION,
 };
 
 #define OTP_IPC_SEQ_SHIFT		24
@@ -110,5 +116,6 @@ int otp_ipc_ecc_get_policy(uint32_t region, uint32_t *ecc_en, uint32_t *ecc_supp
 int otp_ipc_ecc_set_policy(uint32_t region, uint32_t ecc_en);
 int otp_ipc_get_revid(uint32_t *revid0, uint32_t *revid1);
 int otp_ipc_set_read_mode(uint32_t mode);
+int otp_ipc_get_rom_patch_version(uint32_t *version);
 
 #endif /* OTP_IPC_H */

@@ -273,3 +273,20 @@ int otp_ipc_set_read_mode(uint32_t mode)
 
 	return otp_ipc_call(req, resp);
 }
+
+int otp_ipc_get_rom_patch_version(uint32_t *version)
+{
+	uint32_t req[8] = {0, OTP_IPC_PACK_OP_COUNT(OTP_IPC_OP_GET_ROM_PATCH_VERSION, 0),
+			   0, 0, 0, 0, 0, 0};
+	uint32_t resp[8] = {0};
+	int status;
+
+	if (otp_ipc_fd < 0)
+		return -ENODEV;
+
+	status = otp_ipc_call(req, resp);
+	if (status == 0)
+		*version = resp[1];
+
+	return status;
+}

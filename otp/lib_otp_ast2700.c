@@ -114,6 +114,27 @@ static bool otp_use_ipc(void)
 	return info_cb.otp_fd < 0 && otp_ipc_available();
 }
 
+/*
+ * Raw, undecoded SCU1 ROM patch version register: native ioctl when
+ * /dev/aspeed-otp is available, otherwise the IPC equivalent - decoding
+ * differs between A1 and A2, so the caller decodes it, not this function.
+ */
+int otp_get_rom_patch_version(uint32_t *version)
+{
+	int status;
+
+	if (otp_use_ipc()) {
+		status = otp_ipc_get_rom_patch_version(version);
+		if (status) {
+			errno = otp_ipc_status_to_errno(status);
+			return -1;
+		}
+		return 0;
+	}
+
+	return ioctl(info_cb.otp_fd, ASPEED_OTP_GET_ROM_PATCH_VERSION, version);
+}
+
 static int otp_read(uint32_t offset, uint16_t *data)
 {
 	struct otp_read rdata;

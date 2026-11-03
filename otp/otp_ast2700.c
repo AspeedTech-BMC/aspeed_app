@@ -917,6 +917,66 @@ static void otp_print_key_info(void)
 	otp_print_key((uint32_t *)buf);
 }
 
+/* A1's ROM patch version register is one of these exact values, unlike A2's ASCII-ish encoding */
+#define A1_OTP_ROM_PATCH_NONE		0x0
+#define A1_OTP_ROM_PATCH_V1		0x3
+#define A1_OTP_ROM_PATCH_V2		0x3276
+#define A1_OTP_ROM_PATCH_V3		0x3376
+
+static void otp_print_rom_patch_version(void)
+{
+	uint32_t ver;
+	const char *str;
+	int ret;
+
+	ret = otp_get_rom_patch_version(&ver);
+	if (ret) {
+		printf("Failed to read ROM patch version, ret = %d, errno = %d (%s)\n",
+		       ret, errno, otp_cmd_errno_str(errno));
+		return;
+	}
+
+	if (info_cb.version == OTP_AST2700_A2) {
+		uint8_t *b = (uint8_t *)&ver;
+		bool valid = (b[0] == 'v');
+
+		for (int i = 0; valid && i < 4 && b[i] != 0; i++)
+			valid = isprint(b[i]) != 0;
+
+		if (ver == 0x0)
+			printf("ROM patch: None\n");
+		else if (valid)
+			printf("ROM patch: %.4s\n", (char *)&ver);
+		else
+			printf("ROM patch: Unknown (0x%x)\n", ver);
+		return;
+	}
+
+	if (info_cb.version != OTP_AST2700_A1) {
+		printf("ROM patch: unsupported chip version (0x%x)\n", info_cb.version);
+		return;
+	}
+
+	switch (ver) {
+	case A1_OTP_ROM_PATCH_NONE:
+		str = "None";
+		break;
+	case A1_OTP_ROM_PATCH_V1:
+		str = "v1";
+		break;
+	case A1_OTP_ROM_PATCH_V2:
+		str = "v2";
+		break;
+	case A1_OTP_ROM_PATCH_V3:
+		str = "v3";
+		break;
+	default:
+		str = "Unknown";
+		break;
+	}
+	printf("ROM patch: %s\n", str);
+}
+
 static int otp_print_secure_image(struct otp_image_layout *image_layout)
 {
 	uint32_t *buf;
@@ -2109,6 +2169,8 @@ static int do_otpinfo(int argc, char *const argv[])
 		otp_print_strap_ext_info();
 	} else if (!strcmp(argv[1], "key")) {
 		otp_print_key_info();
+	} else if (!strcmp(argv[1], "rompatch")) {
+		otp_print_rom_patch_version();
 	} else {
 		otp_err("otp info: unknown region '%s'", argv[1]);
 		return CMD_RET_USAGE;
@@ -3223,7 +3285,7 @@ static void usage(void)
 	       "\totp <dev> prog: \"o\" skips the \"type YES\" confirm; \"f\" forces programming anyway\n"
 	       "\t    when a region's existing data conflicts with the image while that region's ECC is\n"
 	       "\t    active (otherwise refused, since the second write would corrupt its ECC parity)\n"
-	       "\totp <dev> info key|rbp|conf|strap|strap-ext\n"
+	       "\totp <dev> info key|rbp|conf|strap|strap-ext|rompatch\n"
 	       "\totp <dev> patch prog <dram_addr> <otp_w_offset> <w_count>\n"
 	       "\totp <dev> patch enable pre|post <otp_start_w_offset> <w_count>\n"
 	       "\totp <dev> ecc status|tmp-enable|tmp-disable\n"

@@ -15,6 +15,7 @@
 #include <termios.h>
 #include <termios.h>
 #include <ctype.h>
+#include <endian.h>
 #include "otp_ast2700.h"
 #include "otp_info_ast2700.h"
 #include "otp_ipc.h"
@@ -1045,6 +1046,43 @@ static int otp_print_mt_stage_info(void)
 	}
 
 	otp_print_strap_mt_stage(mt_stage);
+
+	return OTP_SUCCESS;
+}
+
+/*
+ * OTPCAL word 0x12: first two words of the 48-byte vendor key hash. Its
+ * value identifies which HSM solution signed the provisioning image.
+ */
+#define CAL_VENDOR_KEY_HASH_OFFSET	0x12
+#define CAL_VENDOR_KEY_HASH_DUAL_HSM	0xddd4b37b
+#define CAL_VENDOR_KEY_HASH_SINGLE_HSM	0x428d18b0
+
+static int otp_print_hsm_info(void)
+{
+	uint16_t hash[2];
+	uint32_t hash_prefix;
+	const char *hsm_solution;
+	int ret;
+
+	ret = otp_read_raw_multi(CAL_REGION_START_ADDR + CAL_VENDOR_KEY_HASH_OFFSET, hash,
+				 ARRAY_SIZE(hash));
+	if (ret) {
+		otp_err("Failed to read vendor key hash");
+		return OTP_FAILURE;
+	}
+
+	hash_prefix = ((uint32_t)be16toh(hash[0]) << 16) | be16toh(hash[1]);
+
+	if (hash_prefix == CAL_VENDOR_KEY_HASH_DUAL_HSM)
+		hsm_solution = "Dual-HSM";
+	else if (hash_prefix == CAL_VENDOR_KEY_HASH_SINGLE_HSM)
+		hsm_solution = "Single-HSM";
+	else
+		hsm_solution = "unknown";
+
+	printf("Vendor key hash: %04x%04x... (%s)\n",
+	       be16toh(hash[0]), be16toh(hash[1]), hsm_solution);
 
 	return OTP_SUCCESS;
 }
@@ -2245,6 +2283,8 @@ static int do_otpinfo(int argc, char *const argv[])
 		otp_print_rom_patch_version();
 	} else if (!strcmp(argv[1], "mt-stage")) {
 		otp_print_mt_stage_info();
+	} else if (!strcmp(argv[1], "hsm")) {
+		otp_print_hsm_info();
 	} else {
 		otp_err("otp info: unknown region '%s'", argv[1]);
 		return CMD_RET_USAGE;
@@ -3418,7 +3458,7 @@ static void usage(void)
 	       "\totp <dev> prog: \"o\" skips the \"type YES\" confirm; \"f\" forces programming anyway\n"
 	       "\t    when a region's existing data conflicts with the image while that region's ECC is\n"
 	       "\t    active (otherwise refused, since the second write would corrupt its ECC parity)\n"
-	       "\totp <dev> info key|rbp|conf|strap|strap-ext|rompatch|mt-stage\n"
+	       "\totp <dev> info key|rbp|conf|strap|strap-ext|rompatch|mt-stage|hsm\n"
 	       "\totp <dev> patch prog <dram_addr> <otp_w_offset> <w_count>\n"
 	       "\totp <dev> patch enable pre|post <otp_start_w_offset> <w_count>\n"
 	       "\totp <dev> ecc status|tmp-enable|tmp-disable\n"

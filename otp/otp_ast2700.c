@@ -1010,6 +1010,45 @@ static void otp_print_rom_patch_version(void)
 	printf("ROM patch: %s\n", str);
 }
 
+/*
+ * OTPSTRAP word 0xf: six 2-bit manufacturing test stage records, stage 1
+ * at bits[1:0] through stage 6 at bits[11:10]; bits[15:12] reserved.
+ */
+#define OTPSTRAP_MT_STAGE_W_OFFSET	0xf
+#define OTPSTRAP_MT_STAGE_COUNT		6
+#define OTPSTRAP_MT_STAGE_FIELD(val, stage)	(((val) >> ((stage) * 2)) & 0x3)
+
+static void otp_print_strap_mt_stage(uint16_t mt_stage)
+{
+	printf("OTPSTRAP MT stage records (word 0x%x):\n", OTPSTRAP_MT_STAGE_W_OFFSET);
+	for (int stage = 0; stage < OTPSTRAP_MT_STAGE_COUNT; stage++)
+		printf("stage%-3d", stage + 1);
+	printf("\n");
+	for (int stage = 0; stage < OTPSTRAP_MT_STAGE_COUNT; stage++)
+		printf("--------");
+	printf("\n");
+	for (int stage = 0; stage < OTPSTRAP_MT_STAGE_COUNT; stage++)
+		printf("0x%-6x", OTPSTRAP_MT_STAGE_FIELD(mt_stage, stage));
+	printf("\n");
+}
+
+/* Reads OTPSTRAP's MT stage word directly, for "otp info mt-stage" */
+static int otp_print_mt_stage_info(void)
+{
+	uint16_t mt_stage;
+	int ret;
+
+	ret = otp_read_strap(OTPSTRAP_MT_STAGE_W_OFFSET, &mt_stage);
+	if (ret) {
+		otp_err("Failed to read OTPSTRAP MT stage word");
+		return OTP_FAILURE;
+	}
+
+	otp_print_strap_mt_stage(mt_stage);
+
+	return OTP_SUCCESS;
+}
+
 static int otp_print_secure_image(struct otp_image_layout *image_layout)
 {
 	uint32_t *buf;
@@ -2204,6 +2243,8 @@ static int do_otpinfo(int argc, char *const argv[])
 		otp_print_key_info();
 	} else if (!strcmp(argv[1], "rompatch")) {
 		otp_print_rom_patch_version();
+	} else if (!strcmp(argv[1], "mt-stage")) {
+		otp_print_mt_stage_info();
 	} else {
 		otp_err("otp info: unknown region '%s'", argv[1]);
 		return CMD_RET_USAGE;
@@ -3377,7 +3418,7 @@ static void usage(void)
 	       "\totp <dev> prog: \"o\" skips the \"type YES\" confirm; \"f\" forces programming anyway\n"
 	       "\t    when a region's existing data conflicts with the image while that region's ECC is\n"
 	       "\t    active (otherwise refused, since the second write would corrupt its ECC parity)\n"
-	       "\totp <dev> info key|rbp|conf|strap|strap-ext|rompatch\n"
+	       "\totp <dev> info key|rbp|conf|strap|strap-ext|rompatch|mt-stage\n"
 	       "\totp <dev> patch prog <dram_addr> <otp_w_offset> <w_count>\n"
 	       "\totp <dev> patch enable pre|post <otp_start_w_offset> <w_count>\n"
 	       "\totp <dev> ecc status|tmp-enable|tmp-disable\n"

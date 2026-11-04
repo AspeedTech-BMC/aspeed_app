@@ -58,6 +58,9 @@ static int otp_print_rom(uint32_t offset, int w_count)
 	uint16_t ret[1];
 	int rc;
 
+	if (w_count < 0)
+		w_count = range - offset;
+
 	if (offset + w_count > range) {
 		otp_err("offset+count 0x%x exceeds region size 0x%x", offset + w_count, range);
 		return OTP_USAGE;
@@ -87,6 +90,9 @@ static int otp_print_rbp(uint32_t offset, int w_count)
 	uint16_t ret[1];
 	int rc;
 
+	if (w_count < 0)
+		w_count = range - offset;
+
 	if (offset + w_count > range) {
 		otp_err("offset+count 0x%x exceeds region size 0x%x", offset + w_count, range);
 		return OTP_USAGE;
@@ -111,6 +117,9 @@ static int otp_print_conf(uint32_t offset, int w_count)
 	int range = OTP_CONF_REGION_SIZE;
 	uint16_t ret[1];
 	int rc;
+
+	if (w_count < 0)
+		w_count = range - offset;
 
 	if (offset + w_count > range) {
 		otp_err("offset+count 0x%x exceeds region size 0x%x", offset + w_count, range);
@@ -137,6 +146,9 @@ static int otp_print_strap(uint32_t offset, int w_count)
 	uint16_t ret[1];
 	int rc;
 
+	if (w_count < 0)
+		w_count = range - offset;
+
 	if (offset + w_count > range) {
 		otp_err("offset+count 0x%x exceeds region size 0x%x", offset + w_count, range);
 		return OTP_USAGE;
@@ -161,6 +173,9 @@ static int otp_print_strap_pro(uint32_t offset, int w_count)
 	int range = 2;	/* 32-bit / 16 (per word) */
 	uint16_t ret[1];
 	int rc;
+
+	if (w_count < 0)
+		w_count = range - offset;
 
 	if (offset + w_count > range) {
 		otp_err("offset+count 0x%x exceeds region size 0x%x", offset + w_count, range);
@@ -187,6 +202,9 @@ static int otp_print_strap_ext(uint32_t offset, int w_count)
 	uint16_t ret[1];
 	int rc;
 
+	if (w_count < 0)
+		w_count = range - offset;
+
 	if (offset + w_count > range) {
 		otp_err("offset+count 0x%x exceeds region size 0x%x", offset + w_count, range);
 		return OTP_USAGE;
@@ -212,6 +230,9 @@ static int otp_print_strap_ext_valid(uint32_t offset, int w_count)
 	uint16_t ret[1];
 	int rc;
 
+	if (w_count < 0)
+		w_count = range - offset;
+
 	if (offset + w_count > range) {
 		otp_err("offset+count 0x%x exceeds region size 0x%x", offset + w_count, range);
 		return OTP_USAGE;
@@ -236,6 +257,9 @@ static int otp_print_user_data(uint32_t offset, int w_count)
 	int range = OTP_USER_REGION_SIZE;
 	uint16_t ret[1];
 	int rc;
+
+	if (w_count < 0)
+		w_count = range - offset;
 
 	if (offset + w_count > range) {
 		otp_err("offset+count 0x%x exceeds region size 0x%x", offset + w_count, range);
@@ -266,6 +290,9 @@ static int otp_print_sec_data(uint32_t offset, int w_count)
 	uint16_t ret;
 	int rc;
 
+	if (w_count < 0)
+		w_count = range - offset;
+
 	if (offset + w_count > range) {
 		otp_err("offset+count 0x%x exceeds region size 0x%x", offset + w_count, range);
 		return OTP_USAGE;
@@ -295,6 +322,9 @@ static int otp_print_cptra(uint32_t offset, int w_count)
 	uint16_t ret[1];
 	int rc;
 
+	if (w_count < 0)
+		w_count = range - offset;
+
 	if (offset + w_count > range) {
 		otp_err("offset+count 0x%x exceeds region size 0x%x", offset + w_count, range);
 		return OTP_USAGE;
@@ -323,6 +353,9 @@ static int otp_print_puf(uint32_t offset, int w_count)
 	int range = OTP_PUF_REGION_SIZE;
 	uint16_t ret[1];
 	int rc;
+
+	if (w_count < 0)
+		w_count = range - offset;
 
 	if (offset + w_count > range) {
 		otp_err("offset+count 0x%x exceeds region size 0x%x", offset + w_count, range);
@@ -2179,17 +2212,89 @@ static int do_otpinfo(int argc, char *const argv[])
 	return CMD_RET_SUCCESS;
 }
 
+static const struct {
+	uint32_t start;
+	const char *name;
+} otp_dump_regions[] = {
+	{ ROM_REGION_START_ADDR,      "ROM"       },
+	{ RBP_REGION_START_ADDR,      "RBP"       },
+	{ CONF_REGION_START_ADDR,     "CONF"      },
+	{ STRAP_REGION_START_ADDR,    "STRAP"     },
+	{ STRAPEXT_REGION_START_ADDR, "STRAP_EXT" },
+	{ USER_REGION_START_ADDR,     "USER"      },
+	{ SEC_REGION_START_ADDR,      "SECURE"    },
+	{ CAL_REGION_START_ADDR,      "CALIPTRA"  },
+	{ SW_PUF_REGION_START_ADDR,   "SW_PUF"    },
+};
+
+/*
+ * Raw sequential dump of every OTP word except HW PUF (SOCOTP's one-way
+ * cell-unique secret, not meant to ever be printed). All other regions are
+ * laid out back-to-back from ROM_REGION_START_ADDR up to
+ * HW_PUF_REGION_START_ADDR (== SW_PUF_REGION_END_ADDR), so a single flat
+ * read covers ROM/RBP/CONF/STRAP/STRAPEXT/USER/SECURE/CALIPTRA/SW_PUF
+ * without needing per-region dispatch.
+ */
+static int otp_print_all(void)
+{
+	uint16_t buf[8];
+	uint32_t addr;
+	int remaining, chunk;
+	int rc;
+
+	addr = ROM_REGION_START_ADDR;
+	remaining = HW_PUF_REGION_START_ADDR - ROM_REGION_START_ADDR;
+
+	printf("WordAddr  ByteAddr  Data\n");
+	while (remaining > 0) {
+		chunk = remaining > (int)ARRAY_SIZE(buf) ? (int)ARRAY_SIZE(buf) : remaining;
+
+		for (int i = 0; i < (int)ARRAY_SIZE(otp_dump_regions); i++) {
+			if (addr == otp_dump_regions[i].start) {
+				printf("-- %s --\n", otp_dump_regions[i].name);
+				break;
+			}
+		}
+
+		rc = otp_read_raw_multi(addr, buf, chunk);
+		if (rc) {
+			otp_err("OTP read failed at word addr 0x%x", addr);
+			return OTP_FAILURE;
+		}
+
+		printf("0x%04x    0x%04x   ", addr, addr * 2);
+		for (int i = 0; i < chunk; i++)
+			printf(" %04x", buf[i]);
+		printf("\n");
+
+		addr += chunk;
+		remaining -= chunk;
+	}
+
+	return OTP_SUCCESS;
+}
+
 static int do_otpread(int argc, char *const argv[])
 {
-	uint32_t offset, count;
+	uint32_t offset;
+	int count;
 	int ret;
+
+	if (argc == 2 && !strcmp(argv[1], "all")) {
+		ret = otp_print_all();
+		return ret == OTP_SUCCESS ? CMD_RET_SUCCESS : CMD_RET_FAILURE;
+	}
 
 	if (argc == 4) {
 		offset = (uint32_t)strtoul(argv[2], NULL, 16);
-		count = (uint32_t)strtoul(argv[3], NULL, 16);
+		count = (int)strtoul(argv[3], NULL, 16);
 	} else if (argc == 3) {
 		offset = (uint32_t)strtoul(argv[2], NULL, 16);
 		count = 1;
+	} else if (argc == 2) {
+		/* region name only: dump the whole region from offset 0 */
+		offset = 0;
+		count = -1;
 	} else {
 		otp_err("otp read: bad argc %d", argc);
 		return CMD_RET_USAGE;
@@ -2226,21 +2331,6 @@ static int do_otpread(int argc, char *const argv[])
 		return CMD_RET_SUCCESS;
 	return CMD_RET_USAGE;
 }
-
-static const struct {
-	uint32_t start;
-	const char *name;
-} otp_dump_regions[] = {
-	{ ROM_REGION_START_ADDR,      "ROM"       },
-	{ RBP_REGION_START_ADDR,      "RBP"       },
-	{ CONF_REGION_START_ADDR,     "CONF"      },
-	{ STRAP_REGION_START_ADDR,    "STRAP"     },
-	{ STRAPEXT_REGION_START_ADDR, "STRAP_EXT" },
-	{ USER_REGION_START_ADDR,     "USER"      },
-	{ SEC_REGION_START_ADDR,      "SECURE"    },
-	{ CAL_REGION_START_ADDR,      "CALIPTRA"  },
-	{ SW_PUF_REGION_START_ADDR,   "SW_PUF"    },
-};
 
 static int do_otpdump(int argc, char *const argv[])
 {
@@ -3272,7 +3362,9 @@ static void usage(void)
 {
 	printf("ASPEED One-Time-Programmable sub-system\n"
 	       "\totp <dev> version\n"
-	       "\totp <dev> read rom|rbp|conf|strap|strap-pro|strap-ext|strap-ext-vld|u-data|s-data|cptra|puf <otp_w_offset> <w_count>\n"
+	       "\totp <dev> read rom|rbp|conf|strap|strap-pro|strap-ext|strap-ext-vld|u-data|s-data|cptra|puf [<otp_w_offset> <w_count>]\n"
+	       "\totp <dev> read <region>: omitting <otp_w_offset>/<w_count> dumps that whole region\n"
+	       "\totp <dev> read all (dumps every OTP word except HW PUF)\n"
 	       "\totp <dev> pb rbp|conf|u-data|s-data|cptra [o] [f] <otp_w_offset> <bit_offset> <value>\n"
 	       "\totp <dev> pb strap [o] <bit_offset> <value>\n"
 	       "\totp <dev> pb strap-ext-vld all [o] [f]\n"

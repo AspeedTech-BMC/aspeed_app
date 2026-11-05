@@ -402,6 +402,33 @@ int otp_set_ecc_policy(uint32_t region, uint32_t ecc_en)
 	return ioctl(info_cb.otp_fd, ASPEED_OTP_SET_ECC_POLICY, &policy);
 }
 
+/*
+ * Reads a word raw (ECC off) and reports OTP_DBG01[5:0] alongside the
+ * data, regardless of its region's ECC policy - native backend only,
+ * since there is no IPC/BootMCU equivalent.
+ */
+int otp_read_ecc_code(uint32_t offset, uint16_t *data, uint32_t *ecc_code)
+{
+	struct otp_read_ecc req;
+
+	if (otp_use_ipc()) {
+		errno = ENOTSUP;
+		return -1;
+	}
+
+	req.offset = offset;
+	req.data = 0;
+	req.ecc_code = 0;
+
+	if (ioctl(info_cb.otp_fd, ASPEED_OTP_GET_ECC_CODE, &req))
+		return -1;
+
+	*data = (uint16_t)req.data;
+	*ecc_code = req.ecc_code;
+
+	return 0;
+}
+
 int otp_prog(uint32_t offset, uint16_t data)
 {
 	struct otp_prog pdata;
@@ -472,6 +499,11 @@ int otp_prog_multi(uint32_t offset, uint16_t *data, int num)
 static void sb_sha384(uint8_t *src, uint32_t len, uint8_t *digest_ret)
 {
 	EVP_Digest(src, len, digest_ret, NULL, EVP_sha384(), NULL);
+}
+
+void otp_sha384(const uint8_t *src, uint32_t len, uint8_t *digest_ret)
+{
+	sb_sha384((uint8_t *)src, len, digest_ret);
 }
 
 int otp_verify_image(uint8_t *src_buf, uint32_t length, uint8_t *digest_buf)

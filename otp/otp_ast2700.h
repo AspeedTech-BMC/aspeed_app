@@ -57,6 +57,13 @@ struct otp_ecc_policy {
 	uint32_t ecc_supported;  /* GET: filled by driver, SET: ignored */
 };
 
+/* Used with ASPEED_OTP_GET_ECC_CODE */
+struct otp_read_ecc {
+	uint32_t offset;	/* input:  OTP word address */
+	uint32_t data;		/* output: 16-bit read data */
+	uint32_t ecc_code;	/* output: OTP_DBG01[5:0] after a raw (non-ECC) read */
+};
+
 /*
  * OTP DAP timing register (base + 0x530) controls cell read mode.
  * Writing a value here before OTP_CMD_READ selects normal/margin read.
@@ -340,6 +347,8 @@ int otp_ecc_get_status(int *status);
 int otp_ecc_ctrl(bool enable);
 int otp_get_ecc_policy(uint32_t region, uint32_t *ecc_en, uint32_t *ecc_supported);
 int otp_set_ecc_policy(uint32_t region, uint32_t ecc_en);
+int otp_read_ecc_code(uint32_t offset, uint16_t *data, uint32_t *ecc_code);
+void otp_sha384(const uint8_t *src, uint32_t len, uint8_t *digest_ret);
 int otp_prog(uint32_t offset, uint16_t data);
 int otp_prog_multi(uint32_t offset, uint16_t *data, int num);
 int otp_prog_data(int mode, int otp_w_offset, int bit_offset,
@@ -387,5 +396,6 @@ struct otp_revid {
 #define ASPEED_OTP_GET_ECC_POLICY	_IOR(OTPIOC_BASE, 10, struct otp_ecc_policy)
 #define ASPEED_OTP_SET_ECC_POLICY	_IOW(OTPIOC_BASE, 11, struct otp_ecc_policy)
 #define ASPEED_OTP_GET_ROM_PATCH_VERSION _IOR(OTPIOC_BASE, 12, uint32_t)
+#define ASPEED_OTP_GET_ECC_CODE	_IOWR(OTPIOC_BASE, 13, struct otp_read_ecc)
 
 #endif /* OTP_AST2700_H */

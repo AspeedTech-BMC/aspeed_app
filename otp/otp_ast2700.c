@@ -2084,7 +2084,7 @@ static int do_otpreprog_ecc(int argc, char *const argv[])
 	 * checked and reported rather than aborting on the first mismatch.
 	 *
 	 * This step only prepares region *data* for ECC; it never touches
-	 * the OTPSTRAP global-ECC fuse itself - run 'otp <dev> ecc hw-enable'
+	 * the OTPSTRAP global-ECC fuse itself - run 'otp <dev> ecc enable'
 	 * separately afterward to permanently latch global ECC on.
 	 */
 	for (int i = 0; i < (int)ARRAY_SIZE(reprog_ecc_tbl); i++) {
@@ -2136,7 +2136,7 @@ static int do_otpreprog_ecc(int argc, char *const argv[])
 	}
 
 	if (ret == CMD_RET_SUCCESS)
-		printf("Done. Run 'otp <dev> ecc hw-enable' to permanently enable global ECC.\n");
+		printf("Done. Run 'otp <dev> ecc enable' to permanently enable global ECC.\n");
 
 free_bufs:
 	/* Don't bother if ECC was never (or can't be) toggled off, e.g. it's hardware-latched on */
@@ -2625,14 +2625,14 @@ static int do_otppatch(int argc, char *const argv[])
 static int do_otpprog(int argc, char *const argv[])
 {
 	int ret, nconfirm = 0;
-	/* "f": force past otp_prog_image_region()/otp_prog_strap_ext_image()'s
+	/* "force": force past otp_prog_image_region()/otp_prog_strap_ext_image()'s
 	 * incremental-program ECC warning
 	 */
 	bool ecc_force = false;
 	char *path;
 	int next = 1;
 
-	while (argc > next && (!strcmp(argv[next], "o") || !strcmp(argv[next], "f"))) {
+	while (argc > next && (!strcmp(argv[next], "o") || !strcmp(argv[next], "force"))) {
 		if (!strcmp(argv[next], "o"))
 			nconfirm = 1;
 		else
@@ -2724,7 +2724,7 @@ static int otp_prog_read_current(int mode, int otp_w_offset, uint16_t *value)
  * word already has data and this region's ECC is active, programming it
  * again would corrupt the parity locked in by whichever write set those
  * bits, with no indication beyond a later ECC read error. Refuse unless the
- * caller passed "f" to force it anyway.
+ * caller passed "force" to force it anyway.
  */
 static int otp_pb_check_repeat(int mode, int otp_w_offset, bool force)
 {
@@ -2750,7 +2750,7 @@ static int otp_pb_check_repeat(int mode, int otp_w_offset, bool force)
 	printf("Warning: word 0x%x already has data 0x%x and this region's ECC is active -\n",
 	       otp_w_offset, current);
 	printf("programming it again risks corrupting its ECC parity.\n");
-	printf("Pass \"f\" to force programming anyway.\n");
+	printf("Pass \"force\" to force programming anyway.\n");
 
 	return OTP_FAILURE;
 }
@@ -2907,13 +2907,13 @@ static int do_otppb(int argc, char *const argv[])
 	uint32_t bit_offset;
 	uint32_t value;
 	int ret;
-	/* "f": force past otp_pb_check_repeat()'s incremental-program ECC warning */
+	/* "force": force past otp_pb_check_repeat()'s incremental-program ECC warning */
 	bool force = false;
 
 	if (argc >= 2 && !strcmp(argv[1], "strap-ext")) {
 		int next = 2;
 
-		while (argc > next && (!strcmp(argv[next], "o") || !strcmp(argv[next], "f"))) {
+		while (argc > next && (!strcmp(argv[next], "o") || !strcmp(argv[next], "force"))) {
 			if (!strcmp(argv[next], "o"))
 				nconfirm = 1;
 			else
@@ -2938,7 +2938,7 @@ static int do_otppb(int argc, char *const argv[])
 	    !(argc >= 3 && !strcmp(argv[2], "all"))) {
 		int next = 2;
 
-		while (argc > next && (!strcmp(argv[next], "o") || !strcmp(argv[next], "f"))) {
+		while (argc > next && (!strcmp(argv[next], "o") || !strcmp(argv[next], "force"))) {
 			if (!strcmp(argv[next], "o"))
 				nconfirm = 1;
 			else
@@ -2992,7 +2992,7 @@ static int do_otppb(int argc, char *const argv[])
 	argc--;
 	argv++;
 
-	while (argc > 0 && (!strcmp(argv[0], "o") || !strcmp(argv[0], "f"))) {
+	while (argc > 0 && (!strcmp(argv[0], "o") || !strcmp(argv[0], "force"))) {
 		if (!strcmp(argv[0], "o"))
 			nconfirm = 1;
 		else
@@ -3019,10 +3019,10 @@ static int do_otppb(int argc, char *const argv[])
 		}
 
 	} else if (mode == OTP_REGION_STRAP_EXT_VLD) {
-		/* do_otppb()'s top-level interception only lets "all" [o] [f] reach here */
+		/* do_otppb()'s top-level interception only lets "all" [o] [force] reach here */
 		int next = 1;
 
-		while (argc > next && (!strcmp(argv[next], "o") || !strcmp(argv[next], "f"))) {
+		while (argc > next && (!strcmp(argv[next], "o") || !strcmp(argv[next], "force"))) {
 			if (!strcmp(argv[next], "o"))
 				nconfirm = 1;
 			else
@@ -3455,11 +3455,11 @@ static int do_otpecc(int argc, char *const argv[])
 
 		return otp_ecc_policy_dump_all(global_status);
 
-	} else if (!strcmp(argv[0], "hw-enable")) {
+	} else if (!strcmp(argv[0], "enable")) {
 		int nconfirm = (argc == 2 && !strcmp(argv[1], "o"));
 
 		if (argc != 1 && !nconfirm) {
-			otp_err("otp ecc hw-enable: bad argc %d", argc);
+			otp_err("otp ecc enable: bad argc %d", argc);
 			return CMD_RET_USAGE;
 		}
 
@@ -3514,23 +3514,23 @@ static void usage(void)
 	       "\totp <dev> read rom|rbp|conf|strap|strap-pro|strap-ext|strap-ext-vld|u-data|s-data|cptra|puf [<otp_w_offset> <w_count>]\n"
 	       "\totp <dev> read <region>: omitting <otp_w_offset>/<w_count> dumps that whole region\n"
 	       "\totp <dev> read all (dumps every OTP word except HW PUF)\n"
-	       "\totp <dev> pb rbp|conf|u-data|s-data|cptra [o] [f] <otp_w_offset> <bit_offset> <value>\n"
+	       "\totp <dev> pb rbp|conf|u-data|s-data|cptra [o] [force] <otp_w_offset> <bit_offset> <value>\n"
 	       "\totp <dev> pb strap [o] <bit_offset> <value>\n"
-	       "\totp <dev> pb strap-ext-vld all [o] [f]\n"
-	       "\totp <dev> pb strap-ext|strap-ext-vld [o] [f] (interactive: enter bit offsets one at a time, \"end\" to finish)\n"
-	       "\totp <dev> pb strap-ext|strap-ext-vld [o] [f] <word-aligned bit_offset> <full word value>\n"
-	       "\totp <dev> pb: \"o\" skips the \"type YES\" confirm; \"f\" forces programming anyway when\n"
+	       "\totp <dev> pb strap-ext-vld all [o] [force]\n"
+	       "\totp <dev> pb strap-ext|strap-ext-vld [o] [force] (interactive: enter bit offsets one at a time, \"end\" to finish)\n"
+	       "\totp <dev> pb strap-ext|strap-ext-vld [o] [force] <word-aligned bit_offset> <full word value>\n"
+	       "\totp <dev> pb: \"o\" skips the \"type YES\" confirm; \"force\" forces programming anyway when\n"
 	       "\t    the target word already has data and this region's ECC is active (otherwise refused,\n"
 	       "\t    since a second write would corrupt the ECC parity locked in by the first)\n"
-	       "\totp <dev> prog [o] [f] <path>\n"
-	       "\totp <dev> prog: \"o\" skips the \"type YES\" confirm; \"f\" forces programming anyway\n"
+	       "\totp <dev> prog [o] [force] <path>\n"
+	       "\totp <dev> prog: \"o\" skips the \"type YES\" confirm; \"force\" forces programming anyway\n"
 	       "\t    when a region's existing data conflicts with the image while that region's ECC is\n"
 	       "\t    active (otherwise refused, since the second write would corrupt its ECC parity)\n"
 	       "\totp <dev> info key|rbp|conf|strap|strap-ext|rompatch|mt-stage|hsm\n"
 	       "\totp <dev> patch prog <dram_addr> <otp_w_offset> <w_count>\n"
 	       "\totp <dev> patch enable pre|post <otp_start_w_offset> <w_count>\n"
 	       "\totp <dev> ecc status|tmp-enable|tmp-disable\n"
-	       "\totp <dev> ecc hw-enable [o] (permanently burns the OTP strap ECC-enable fuse)\n"
+	       "\totp <dev> ecc enable [o] (permanently burns the OTP strap ECC-enable fuse)\n"
 	       "\totp <dev> ecc policy dump\n"
 	       "\totp <dev> ecc policy set rom|conf|strap-ext|u-data|s-data|cptra|puf enable|disable\n"
 	       "\totp <dev> dump <file> [--skip_locked_regions]\n"
@@ -3539,7 +3539,7 @@ static void usage(void)
 	       "\totp <dev> reprog_ecc [conf|strap-ext|u-data|s-data|cptra] [--ref <verified_dump>] [--dry_run] [o]\n"
 	       "\totp <dev> reprog_ecc: re-programs ECC-capable regions' data with parity and\n"
 	       "\t    verifies each one's hash is unchanged; auto-skips cptra if it already has ECC;\n"
-	       "\t    does not touch the global-ECC fuse - follow with 'otp <dev> ecc hw-enable'\n");
+	       "\t    does not touch the global-ECC fuse - follow with 'otp <dev> ecc enable'\n");
 }
 
 struct cmd_tbl *find_cmd_tbl(const char *cmd, struct cmd_tbl *table,

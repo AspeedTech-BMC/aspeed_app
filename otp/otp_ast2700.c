@@ -1673,8 +1673,8 @@ static const struct reprog_ecc_entry reprog_ecc_tbl[] = {
  * Reads cptra keyhash words raw (non-ECC) via otp_read_ecc_code(). A
  * non-zero ECC code on the first non-zero word means cptra was originally
  * programmed with ECC parity and should be skipped during reprog. Defaults
- * to "has ECC" (skip) when the check itself can't run (e.g. over IPC),
- * since that's the safe direction to be wrong in.
+ * to "has ECC" (skip) if the probe itself fails, since that's the safe
+ * direction to be wrong in.
  */
 static bool otp_cptra_has_ecc(void)
 {
@@ -1686,11 +1686,8 @@ static bool otp_cptra_has_ecc(void)
 		addr = CAL_REGION_START_ADDR + CAL_VENDOR_KEY_HASH_OFFSET + i;
 
 		if (otp_read_ecc_code(addr, &data, &ecc_code)) {
-			if (errno == ENOTSUP)
-				printf("OTP reprog_ecc: cannot check cptra ECC status over IPC, assuming it has ECC\n");
-			else
-				printf("OTP reprog_ecc: cptra ECC-code probe failed at 0x%x: %s\n",
-				       addr, otp_cmd_errno_str(errno));
+			printf("OTP reprog_ecc: cptra ECC-code probe failed at 0x%x: %s\n",
+			       addr, otp_cmd_errno_str(errno));
 			return true;
 		}
 

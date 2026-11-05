@@ -290,3 +290,22 @@ int otp_ipc_get_rom_patch_version(uint32_t *version)
 
 	return status;
 }
+
+int otp_ipc_read_ecc_code(uint32_t addr, uint32_t *data, uint32_t *ecc_code)
+{
+	uint32_t req[8] = {addr, OTP_IPC_PACK_OP_COUNT(OTP_IPC_OP_READ_ECC_CODE, 0),
+			   0, 0, 0, 0, 0, 0};
+	uint32_t resp[8] = {0};
+	int status;
+
+	if (otp_ipc_fd < 0)
+		return -ENODEV;
+
+	status = otp_ipc_call(req, resp);
+	if (status == 0) {
+		*data = resp[1];
+		*ecc_code = resp[2];
+	}
+
+	return status;
+}

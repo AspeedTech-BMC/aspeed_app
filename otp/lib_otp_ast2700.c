@@ -404,16 +404,24 @@ int otp_set_ecc_policy(uint32_t region, uint32_t ecc_en)
 
 /*
  * Reads a word raw (ECC off) and reports OTP_DBG01[5:0] alongside the
- * data, regardless of its region's ECC policy - native backend only,
- * since there is no IPC/BootMCU equivalent.
+ * data, regardless of its region's ECC policy: native ioctl when
+ * /dev/aspeed-otp is available, otherwise the IPC equivalent.
  */
 int otp_read_ecc_code(uint32_t offset, uint16_t *data, uint32_t *ecc_code)
 {
 	struct otp_read_ecc req;
+	int status;
 
 	if (otp_use_ipc()) {
-		errno = ENOTSUP;
-		return -1;
+		uint32_t raw_data;
+
+		status = otp_ipc_read_ecc_code(offset, &raw_data, ecc_code);
+		if (status) {
+			errno = otp_ipc_status_to_errno(status);
+			return -1;
+		}
+		*data = (uint16_t)raw_data;
+		return 0;
 	}
 
 	req.offset = offset;

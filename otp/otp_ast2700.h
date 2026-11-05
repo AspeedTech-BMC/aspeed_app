@@ -89,7 +89,7 @@ enum otp_read_mode {
 	OTP_READ_MODE_MARGIN = 1,
 };
 
-#define OTP_VER				"2.1.0"
+#define OTP_VER				"3.0.0"
 
 #define OTP_AST2700_A0			0
 #define OTP_AST2700_A1			1

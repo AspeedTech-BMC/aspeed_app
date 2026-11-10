@@ -2692,6 +2692,25 @@ static int otp_prog_region_ecc_id(int mode, uint32_t *id)
 	return 0;
 }
 
+/* Whether this region's ECC is currently active (global force or its own policy). */
+static int otp_region_ecc_active(int mode, bool *active)
+{
+	uint32_t region_id;
+	int global_status;
+	uint32_t ecc_en = 0, ecc_supported = 0;
+
+	*active = false;
+
+	if (otp_prog_region_ecc_id(mode, &region_id) ||
+	    otp_ecc_get_status(&global_status) ||
+	    otp_get_ecc_policy(region_id, &ecc_en, &ecc_supported))
+		return -1;
+
+	*active = ecc_supported && (global_status != OTP_ECC_GLOBAL_DISABLED || ecc_en);
+
+	return 0;
+}
+
 /* Reads otp_w_offset's current value for whichever region otp_region selects. */
 static int otp_prog_read_current(int mode, int otp_w_offset, uint16_t *value)
 {
@@ -2724,14 +2743,21 @@ static int otp_prog_read_current(int mode, int otp_w_offset, uint16_t *value)
  * word already has data and this region's ECC is active, programming it
  * again would corrupt the parity locked in by whichever write set those
  * bits, with no indication beyond a later ECC read error. Refuse unless the
- * caller passed "force" to force it anyway.
+ * caller passed "force" to force it anyway. Also prints an upfront heads-up
+ * whenever this region's ECC is active, even on a first write (no existing
+ * data, or "force" given), since the word can never be safely reprogrammed
+ * with a different value afterwards.
  */
 static int otp_pb_check_repeat(int mode, int otp_w_offset, bool force)
 {
 	uint16_t current = 0;
-	uint32_t region_id;
-	int global_status;
-	uint32_t ecc_en = 0, ecc_supported = 0;
+	bool ecc_active = false;
+
+	otp_region_ecc_active(mode, &ecc_active);
+	if (ecc_active)
+		printf(ANSI_COLOR_YELLOW
+		       "Note: word 0x%x's region has ECC active - programmable once, no rewrites."
+		       ANSI_COLOR_RESET "\n", otp_w_offset);
 
 	if (force)
 		return OTP_SUCCESS;
@@ -2739,18 +2765,12 @@ static int otp_pb_check_repeat(int mode, int otp_w_offset, bool force)
 	if (otp_prog_read_current(mode, otp_w_offset, &current) || !current)
 		return OTP_SUCCESS;
 
-	if (otp_prog_region_ecc_id(mode, &region_id) ||
-	    otp_ecc_get_status(&global_status) ||
-	    otp_get_ecc_policy(region_id, &ecc_en, &ecc_supported))
+	if (!ecc_active)
 		return OTP_SUCCESS;
 
-	if (!ecc_supported || (global_status == OTP_ECC_GLOBAL_DISABLED && !ecc_en))
-		return OTP_SUCCESS;
-
-	printf("Warning: word 0x%x already has data 0x%x and this region's ECC is active -\n",
-	       otp_w_offset, current);
-	printf("programming it again risks corrupting its ECC parity.\n");
-	printf("Pass \"force\" to force programming anyway.\n");
+	printf(ANSI_COLOR_RED
+	       "Warning: word 0x%x=0x%x already set, ECC active - rewrite would corrupt it. Use \"force\" to override."
+	       ANSI_COLOR_RESET "\n", otp_w_offset, current);
 
 	return OTP_FAILURE;
 }
@@ -3519,13 +3539,11 @@ static void usage(void)
 	       "\totp <dev> pb strap-ext-vld all [o] [force]\n"
 	       "\totp <dev> pb strap-ext|strap-ext-vld [o] [force] (interactive: enter bit offsets one at a time, \"end\" to finish)\n"
 	       "\totp <dev> pb strap-ext|strap-ext-vld [o] [force] <word-aligned bit_offset> <full word value>\n"
-	       "\totp <dev> pb: \"o\" skips the \"type YES\" confirm; \"force\" forces programming anyway when\n"
-	       "\t    the target word already has data and this region's ECC is active (otherwise refused,\n"
-	       "\t    since a second write would corrupt the ECC parity locked in by the first)\n"
+	       "\totp <dev> pb: \"o\" skips \"type YES\"; \"force\" overrides the refusal to rewrite an\n"
+	       "\t    ECC-active word that already has data (rewriting it would corrupt its parity)\n"
 	       "\totp <dev> prog [o] [force] <path>\n"
-	       "\totp <dev> prog: \"o\" skips the \"type YES\" confirm; \"force\" forces programming anyway\n"
-	       "\t    when a region's existing data conflicts with the image while that region's ECC is\n"
-	       "\t    active (otherwise refused, since the second write would corrupt its ECC parity)\n"
+	       "\totp <dev> prog: \"o\" skips \"type YES\"; \"force\" overrides the refusal to rewrite an\n"
+	       "\t    ECC-active region whose existing data conflicts with the image\n"
 	       "\totp <dev> info key|rbp|conf|strap|strap-ext|rompatch|mt-stage|hsm\n"
 	       "\totp <dev> patch prog <dram_addr> <otp_w_offset> <w_count>\n"
 	       "\totp <dev> patch enable pre|post <otp_start_w_offset> <w_count>\n"

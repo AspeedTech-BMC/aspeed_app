@@ -902,6 +902,7 @@ int otp_prog_image_region(struct otp_image_layout *image_layout, enum otp_region
 	int size, w_region_size;
 	int ret;
 	bool ecc_active;
+	int n_blank = 0, n_matched = 0, n_programmed = 0;
 
 	otp_region_ecc_active(region_type, &ecc_active);
 
@@ -971,21 +972,35 @@ int otp_prog_image_region(struct otp_image_layout *image_layout, enum otp_region
 
 	printf("Start Programming...\n");
 	for (int i = 0; i < size / 2; i++) {
-		if (buf[i] == 0)
+		if (buf[i] == 0) {
+			n_blank++;
 			continue;
+		}
 
-		otp_read_func(i, &otp_value);
+		if (otp_read_func(i, &otp_value)) {
+			if (!force) {
+				printf("ERROR: could not read OTP region w_offset [0x%x] to check for a\n",
+				       i);
+				printf("conflict - refusing to program it blind. Pass \"force\" to force anyway.\n");
+				return OTP_FAILURE;
+			}
+			otp_value = 0;
+		} else if (otp_value == buf[i]) {
+			/* Already set to the target value - nothing to do, not a conflict. */
+			n_matched++;
+			continue;
+		}
 
 		/* Show warning if OTP value is not 0 and different from image data,
 		 * which may indicate the OTP bit has been programmed before
 		 */
-		if (otp_value && otp_value != buf[i]) {
+		if (otp_value) {
 			if (ecc_active && !force) {
 				printf("ERROR: OTP region w_offset [0x%x]=0x%x already programmed and this\n",
 				       i, otp_value);
 				printf("region's ECC is active - programming 0x%x on top of it would corrupt\n",
 				       buf[i]);
-				printf("its ECC parity. Pass \"f\" to force programming anyway.\n");
+				printf("its ECC parity. Pass \"force\" to force programming anyway.\n");
 				return OTP_FAILURE;
 			}
 			printf("Warning: OTP region w_offset [0x%x]=0x%x prog to 0x%x\n",
@@ -997,8 +1012,19 @@ int otp_prog_image_region(struct otp_image_layout *image_layout, enum otp_region
 			printf("%s: Prog Failed, ret:0x%x\n", __func__, ret);
 			return ret;
 		}
+
+		/* Verify the burn actually took - e.g. a write-protected region (see "skip-wp") may
+		 * silently no-op a write rather than erroring out of otp_prog_data() above.
+		 */
+		if (otp_read_func(i, &otp_value) || otp_value != buf[i]) {
+			printf("ERROR: OTP region w_offset [0x%x] readback 0x%x does not match programmed 0x%x\n",
+			       i, otp_value, buf[i]);
+			return OTP_FAILURE;
+		}
+		n_programmed++;
 	}
-	printf("Done\n");
+	printf("Done: %d already matched, %d programmed, %d blank in image (of %d words)\n",
+	       n_matched, n_programmed, n_blank, w_region_size);
 
 	return OTP_SUCCESS;
 }
@@ -1014,6 +1040,9 @@ int otp_prog_strap_image(struct otp_image_layout *image_layout,
 	int prog_flag = 0;
 	int bit_offset;
 	int ret;
+	uint16_t val;
+	int n_matched = 0, n_programmed = 0, n_failed = 0;
+	int n_pbit_matched = 0, n_pbit_programmed = 0;
 
 	strap = (uint32_t *)image_layout->strap;
 	strap_pro = strap + 1;
@@ -1036,11 +1065,13 @@ int otp_prog_strap_image(struct otp_image_layout *image_layout,
 
 		if (otpstrap[i].protected == 1 && prog_flag) {
 			fail = 1;
+			n_failed++;
 			printf("Warning: OTPSTRAP[0x%x] is protected, cannot be programmed\n", i);
 			continue;
 		}
 		if (otpstrap[i].remain_times == 0 && prog_flag) {
 			fail = 1;
+			n_failed++;
 			printf("Warning: OTPSTRAP[0x%x] no remain times\n", i);
 			continue;
 		}
@@ -1049,9 +1080,21 @@ int otp_prog_strap_image(struct otp_image_layout *image_layout,
 			ret = otp_prog_data(OTP_REGION_STRAP, w_offset, bit_offset, bit, 1, false);
 			if (ret)
 				return OTP_FAILURE;
+
+			/* Verify the burn actually took - a write-protected strap word (see
+			 * "skip-wp") may silently no-op a write rather than erroring out above.
+			 */
+			if (otp_read_strap(w_offset, &val) || ((val >> bit_offset) & 0x1) != bit) {
+				printf("ERROR: OTPSTRAP[0x%x] readback does not match the programmed value\n",
+				       i);
+				return OTP_FAILURE;
+			}
+			n_programmed++;
+		} else {
+			n_matched++;
 		}
 
-		if (pbit) {
+		if (pbit && !otpstrap[i].protected) {
 			if (i < 16)
 				w_offset = 0;
 			else
@@ -1060,13 +1103,25 @@ int otp_prog_strap_image(struct otp_image_layout *image_layout,
 			ret = otp_prog_data(OTP_REGION_STRAP, w_offset, bit_offset, pbit, 1, false);
 			if (ret)
 				return OTP_FAILURE;
+
+			if (otp_read_strap(w_offset, &val) || ((val >> bit_offset) & 0x1) != pbit) {
+				printf("ERROR: OTPSTRAP protect bit [0x%x] readback does not match the programmed value\n",
+				       i);
+				return OTP_FAILURE;
+			}
+			n_pbit_programmed++;
+		} else if (pbit) {
+			n_pbit_matched++;
 		}
 	}
+
+	printf("%s: %d already matched, %d programmed, %d failed (of %d bits); protect bits: %d already protected, %d newly protected\n",
+	       fail ? "Failed" : "Done", n_matched, n_programmed, n_failed,
+	       n_matched + n_programmed + n_failed, n_pbit_matched, n_pbit_programmed);
 
 	if (fail == 1)
 		return OTP_FAILURE;
 
-	printf("Done\n");
 	return OTP_SUCCESS;
 }
 
@@ -1076,6 +1131,7 @@ int otp_prog_strap_ext_image(struct otp_image_layout *image_layout, bool force)
 	uint16_t *strap_ext_vld;
 	bool ecc_active;
 	int ret;
+	int n_blank = 0, n_matched = 0, n_programmed = 0;
 
 	strap_ext = (uint16_t *)image_layout->strap_ext;
 	strap_ext_vld = strap_ext + 8;
@@ -1089,6 +1145,8 @@ int otp_prog_strap_ext_image(struct otp_image_layout *image_layout, bool force)
 	 */
 	printf("Start Programming...\n");
 	for (int w_offset = 0; w_offset < 8; w_offset++) {
+		bool skip = false;
+
 		if (strap_ext[w_offset]) {
 			uint16_t current = 0;
 
@@ -1096,24 +1154,44 @@ int otp_prog_strap_ext_image(struct otp_image_layout *image_layout, bool force)
 				if (!force) {
 					printf("ERROR: could not read OTPSTRAPEXT word 0x%x to check for an ECC\n",
 					       w_offset);
-					printf("conflict - refusing to program it blind. Pass \"f\" to force anyway.\n");
+					printf("conflict - refusing to program it blind. Pass \"force\" to force anyway.\n");
 					return OTP_FAILURE;
 				}
-			} else if (current && current != strap_ext[w_offset] && ecc_active && !force) {
+			} else if (current == strap_ext[w_offset]) {
+				n_matched++;
+				skip = true;
+			} else if (current && ecc_active && !force) {
 				printf("ERROR: OTPSTRAPEXT word 0x%x=0x%x already programmed and ECC is active -\n",
 				       w_offset, current);
 				printf("programming 0x%x on top of it would corrupt its ECC parity.\n",
 				       strap_ext[w_offset]);
-				printf("Pass \"f\" to force programming anyway.\n");
+				printf("Pass \"force\" to force programming anyway.\n");
 				return OTP_FAILURE;
 			}
 
-			ret = otp_prog_data(OTP_REGION_STRAP_EXT, w_offset, 0,
-					    strap_ext[w_offset], 1, false);
-			if (ret)
-				return OTP_FAILURE;
+			if (!skip) {
+				ret = otp_prog_data(OTP_REGION_STRAP_EXT, w_offset, 0,
+						    strap_ext[w_offset], 1, false);
+				if (ret)
+					return OTP_FAILURE;
+
+				/* Verify the burn actually took - a write-protected strap_ext
+				 * region (see "skip-wp") may silently no-op a write rather
+				 * than erroring out of otp_prog_data() above.
+				 */
+				if (otp_read_strap_ext(w_offset, &current) ||
+				    current != strap_ext[w_offset]) {
+					printf("ERROR: OTPSTRAPEXT word 0x%x readback does not match programmed value\n",
+					       w_offset);
+					return OTP_FAILURE;
+				}
+				n_programmed++;
+			}
+		} else {
+			n_blank++;
 		}
 
+		skip = false;
 		if (strap_ext_vld[w_offset]) {
 			uint16_t current = 0;
 
@@ -1121,25 +1199,41 @@ int otp_prog_strap_ext_image(struct otp_image_layout *image_layout, bool force)
 				if (!force) {
 					printf("ERROR: could not read OTPSTRAPEXT_VLD word 0x%x to check for an ECC\n",
 					       w_offset);
-					printf("conflict - refusing to program it blind. Pass \"f\" to force anyway.\n");
+					printf("conflict - refusing to program it blind. Pass \"force\" to force anyway.\n");
 					return OTP_FAILURE;
 				}
-			} else if (current && current != strap_ext_vld[w_offset] && ecc_active && !force) {
+			} else if (current == strap_ext_vld[w_offset]) {
+				n_matched++;
+				skip = true;
+			} else if (current && ecc_active && !force) {
 				printf("ERROR: OTPSTRAPEXT_VLD word 0x%x=0x%x already programmed and ECC is\n",
 				       w_offset, current);
 				printf("active - programming 0x%x on top of it would corrupt its ECC parity.\n",
 				       strap_ext_vld[w_offset]);
-				printf("Pass \"f\" to force programming anyway.\n");
+				printf("Pass \"force\" to force programming anyway.\n");
 				return OTP_FAILURE;
 			}
 
-			ret = otp_prog_data(OTP_REGION_STRAP_EXT_VLD, w_offset, 0,
-					    strap_ext_vld[w_offset], 1, false);
-			if (ret)
-				return OTP_FAILURE;
+			if (!skip) {
+				ret = otp_prog_data(OTP_REGION_STRAP_EXT_VLD, w_offset, 0,
+						    strap_ext_vld[w_offset], 1, false);
+				if (ret)
+					return OTP_FAILURE;
+
+				if (otp_read_strap_ext_vld(w_offset, &current) ||
+				    current != strap_ext_vld[w_offset]) {
+					printf("ERROR: OTPSTRAPEXT_VLD word 0x%x readback does not match programmed value\n",
+					       w_offset);
+					return OTP_FAILURE;
+				}
+				n_programmed++;
+			}
+		} else {
+			n_blank++;
 		}
 	}
 
-	printf("Done\n");
+	printf("Done: %d already matched, %d programmed, %d blank in image (of %d words)\n",
+	       n_matched, n_programmed, n_blank, n_matched + n_programmed + n_blank);
 	return OTP_SUCCESS;
 }

@@ -1560,7 +1560,27 @@ static int otp_check_strap_image(struct otp_image_layout *image_layout,
 	return OTP_SUCCESS;
 }
 
-static int otp_prog_image(char *path, int nconfirm, bool ecc_force)
+/*
+ * Reports a region's static write-protect fuse status. With skip_wp unset,
+ * this is fatal (otp_err() + *ret = -1, caller aborts); with skip_wp set,
+ * the caller proceeds anyway, so this downgrades to a yellow heads-up
+ * instead of a red error.
+ */
+static void otp_prog_check_wp(const char *region_name, bool protected, bool skip_wp, int *ret)
+{
+	if (!protected)
+		return;
+
+	if (skip_wp) {
+		printf(ANSI_COLOR_YELLOW "OTP %s region is write protected - continuing (skip-wp)"
+		       ANSI_COLOR_RESET "\n", region_name);
+	} else {
+		otp_err("OTP %s region is write protected", region_name);
+		*ret = -1;
+	}
+}
+
+static int otp_prog_image(char *path, int nconfirm, bool ecc_force, bool skip_wp)
 {
 	struct otp_image_layout image_layout;
 	struct otpstrap_status otpstrap[32];
@@ -1575,7 +1595,7 @@ static int otp_prog_image(char *path, int nconfirm, bool ecc_force)
 
 	fd = fopen(path, "rb");
 	if (!fd) {
-		printf("failed to open %s\n", path);
+		otp_err("OTP prog: failed to open %s", path);
 		ret = OTP_FAILURE;
 		goto end;
 	}
@@ -1585,7 +1605,7 @@ static int otp_prog_image(char *path, int nconfirm, bool ecc_force)
 	buf = malloc(fsize + 1);
 	ret = fread(buf, 1, fsize, fd);
 	if (ret != fsize) {
-		printf("Reading \"%s\" failed\n", path);
+		otp_err("OTP prog: reading \"%s\" failed", path);
 		ret = OTP_FAILURE;
 		goto end;
 	}
@@ -1594,7 +1614,7 @@ static int otp_prog_image(char *path, int nconfirm, bool ecc_force)
 
 	otp_header = (struct otp_header *)buf;
 	if (!otp_header) {
-		printf("Failed to map physical memory\n");
+		otp_err("OTP prog: failed to map physical memory");
 		ret = OTP_FAILURE;
 		goto end;
 	}
@@ -1606,8 +1626,8 @@ static int otp_prog_image(char *path, int nconfirm, bool ecc_force)
 
 	/* Check Image Magic */
 	if (strncmp(OTP_MAGIC, (char *)otp_header->otp_magic, strlen(OTP_MAGIC)) != 0) {
-		printf("Image is invalid, magic 0x%x should be %s\n",
-		       *(uint32_t *)otp_header->otp_magic, OTP_MAGIC);
+		otp_err("OTP prog: image is invalid, magic 0x%x should be %s",
+			*(uint32_t *)otp_header->otp_magic, OTP_MAGIC);
 		ret = OTP_FAILURE;
 		goto end;
 	}
@@ -1643,50 +1663,40 @@ static int otp_prog_image(char *path, int nconfirm, bool ecc_force)
 	} else if (otp_header->soc_ver == SOC_AST2700A2) {
 		image_soc_ver = OTP_AST2700_A2;
 	} else {
-		printf("Image SOC Version is not supported\n");
+		otp_err("OTP prog: image SOC version is not supported");
 		ret = OTP_FAILURE;
 		goto end;
 	}
 
 	if (image_soc_ver != info_cb.version) {
-		printf("Image SOC version is not match to HW SOC version\n");
+		otp_err("OTP prog: image SOC version does not match HW SOC version");
 		ret = OTP_FAILURE;
 		goto end;
 	}
 
 	ret = otp_verify_image(buf, image_size, checksum);
 	if (ret) {
-		printf("checksum is invalid\n");
+		otp_err("OTP prog: checksum is invalid");
 		ret = OTP_FAILURE;
 		goto end;
 	}
 
 	if (info_cb.pro_sts.fields.mem_lock) {
-		printf("OTP memory is locked\n");
+		otp_err("OTP prog: OTP memory is locked");
 		ret = OTP_FAILURE;
 		goto end;
 	}
 
 	ret = 0;
-	if (otp_header->image_info & OTP_INC_ROM) {
-		if (info_cb.pro_sts.fields.w_prot_rom) {
-			printf("OTP rom region is write protected\n");
-			ret = -1;
-		}
-	}
+	if (otp_header->image_info & OTP_INC_ROM)
+		otp_prog_check_wp("rom", info_cb.pro_sts.fields.w_prot_rom, skip_wp, &ret);
 
-	if (otp_header->image_info & OTP_INC_CONFIG) {
-		if (info_cb.pro_sts.fields.w_prot_conf) {
-			printf("OTP config region is write protected\n");
-			ret = -1;
-		}
-	}
+	if (otp_header->image_info & OTP_INC_CONFIG)
+		otp_prog_check_wp("config", info_cb.pro_sts.fields.w_prot_conf, skip_wp, &ret);
 
 	if (otp_header->image_info & OTP_INC_STRAP) {
-		if (info_cb.pro_sts.fields.w_prot_strap) {
-			printf("OTP strap region is write protected\n");
-			ret = -1;
-		}
+		otp_prog_check_wp("strap", info_cb.pro_sts.fields.w_prot_strap, skip_wp, &ret);
+
 		printf("Read OTP Strap Region:\n");
 		otp_strap_status(otpstrap);
 
@@ -1695,21 +1705,21 @@ static int otp_prog_image(char *path, int nconfirm, bool ecc_force)
 			ret = -1;
 	}
 
-	if (otp_header->image_info & OTP_INC_STRAP_EXT) {
-		if (info_cb.pro_sts.fields.w_prot_strap_ext) {
-			printf("OTP strap extension region is write protected\n");
-			ret = -1;
-		}
-	}
+	if (otp_header->image_info & OTP_INC_STRAP_EXT)
+		otp_prog_check_wp("strap extension", info_cb.pro_sts.fields.w_prot_strap_ext,
+				  skip_wp, &ret);
 
-	if (otp_header->image_info & OTP_INC_CALIPTRA) {
-		if (info_cb.pro_sts.fields.w_prot_cal) {
-			printf("OTP cptra region is write protected\n");
-			ret = -1;
-		}
-	}
+	if (otp_header->image_info & OTP_INC_CALIPTRA)
+		otp_prog_check_wp("cptra", info_cb.pro_sts.fields.w_prot_cal, skip_wp, &ret);
 
+	/*
+	 * This confirms which gate actually aborted the command: all the
+	 * region write-protect/writability checks above only set ret, they
+	 * don't return immediately, so this is the first point proving
+	 * "ret == -1" is why prog is refusing to continue.
+	 */
 	if (ret == -1) {
+		otp_err("OTP prog: aborting - one or more regions are write protected or unwritable");
 		ret = OTP_FAILURE;
 		goto end;
 	}
@@ -1718,7 +1728,7 @@ static int otp_prog_image(char *path, int nconfirm, bool ecc_force)
 		if (otp_header->image_info & OTP_INC_ROM) {
 			printf("\nOTP ROM region :\n");
 			if (otp_print_rom_image(&image_layout) < 0) {
-				printf("OTP print rom error, please check.\n");
+				otp_err("OTP prog: print rom error, please check");
 				ret = OTP_FAILURE;
 				goto end;
 			}
@@ -1726,7 +1736,7 @@ static int otp_prog_image(char *path, int nconfirm, bool ecc_force)
 		if (otp_header->image_info & OTP_INC_RBP) {
 			printf("\nOTP RBP region :\n");
 			if (otp_print_rbp_image(&image_layout) < 0) {
-				printf("OTP print rbp error, please check.\n");
+				otp_err("OTP prog: print rbp error, please check");
 				ret = OTP_FAILURE;
 				goto end;
 			}
@@ -1734,7 +1744,7 @@ static int otp_prog_image(char *path, int nconfirm, bool ecc_force)
 		if (otp_header->image_info & OTP_INC_SECURE) {
 			printf("\nOTP secure region :\n");
 			if (otp_print_secure_image(&image_layout) < 0) {
-				printf("OTP print secure error, please check.\n");
+				otp_err("OTP prog: print secure error, please check");
 				ret = OTP_FAILURE;
 				goto end;
 			}
@@ -1742,7 +1752,7 @@ static int otp_prog_image(char *path, int nconfirm, bool ecc_force)
 		if (otp_header->image_info & OTP_INC_CONFIG) {
 			printf("\nOTP configuration region :\n");
 			if (otp_print_conf_image(&image_layout) < 0) {
-				printf("OTP config error, please check.\n");
+				otp_err("OTP prog: print config error, please check");
 				ret = OTP_FAILURE;
 				goto end;
 			}
@@ -1750,7 +1760,7 @@ static int otp_prog_image(char *path, int nconfirm, bool ecc_force)
 		if (otp_header->image_info & OTP_INC_STRAP) {
 			printf("\nOTP strap region :\n");
 			if (otp_print_strap_image(&image_layout) < 0) {
-				printf("OTP strap error, please check.\n");
+				otp_err("OTP prog: print strap error, please check");
 				ret = OTP_FAILURE;
 				goto end;
 			}
@@ -1758,7 +1768,7 @@ static int otp_prog_image(char *path, int nconfirm, bool ecc_force)
 		if (otp_header->image_info & OTP_INC_STRAP_EXT) {
 			printf("\nOTP strap extension region :\n");
 			if (otp_print_strap_ext_image(&image_layout) < 0) {
-				printf("OTP strap_ext error, please check.\n");
+				otp_err("OTP prog: print strap_ext error, please check");
 				ret = OTP_FAILURE;
 				goto end;
 			}
@@ -1766,7 +1776,7 @@ static int otp_prog_image(char *path, int nconfirm, bool ecc_force)
 		if (otp_header->image_info & OTP_INC_CALIPTRA) {
 			printf("\nOTP caliptra region :\n");
 			if (otp_print_cptra_image(&image_layout) < 0) {
-				printf("OTP caliptra error, please check.\n");
+				otp_err("OTP prog: print caliptra error, please check");
 				ret = OTP_FAILURE;
 				goto end;
 			}
@@ -1774,7 +1784,7 @@ static int otp_prog_image(char *path, int nconfirm, bool ecc_force)
 		if (otp_header->image_info & OTP_INC_USER) {
 			printf("\nOTP user region :\n");
 			if (otp_print_user_image(&image_layout) < 0) {
-				printf("OTP user error, please check.\n");
+				otp_err("OTP prog: print user error, please check");
 				ret = OTP_FAILURE;
 				goto end;
 			}
@@ -1792,7 +1802,7 @@ static int otp_prog_image(char *path, int nconfirm, bool ecc_force)
 		printf("programing rom region ...\n");
 		ret = otp_prog_image_region(&image_layout, OTP_REGION_ROM, ecc_force);
 		if (ret) {
-			printf("Error\n");
+			otp_err("OTP prog: rom region programming failed");
 			goto end;
 		}
 	}
@@ -1800,7 +1810,7 @@ static int otp_prog_image(char *path, int nconfirm, bool ecc_force)
 		printf("programing rbp region ...\n");
 		ret = otp_prog_image_region(&image_layout, OTP_REGION_RBP, ecc_force);
 		if (ret) {
-			printf("Error\n");
+			otp_err("OTP prog: rbp region programming failed");
 			goto end;
 		}
 	}
@@ -1808,7 +1818,7 @@ static int otp_prog_image(char *path, int nconfirm, bool ecc_force)
 		printf("programing secure region ...\n");
 		ret = otp_prog_image_region(&image_layout, OTP_REGION_SECURE, ecc_force);
 		if (ret) {
-			printf("Error\n");
+			otp_err("OTP prog: secure region programming failed");
 			goto end;
 		}
 	}
@@ -1816,7 +1826,7 @@ static int otp_prog_image(char *path, int nconfirm, bool ecc_force)
 		printf("programing configuration region ...\n");
 		ret = otp_prog_image_region(&image_layout, OTP_REGION_CONF, ecc_force);
 		if (ret != 0) {
-			printf("Error\n");
+			otp_err("OTP prog: config region programming failed");
 			goto end;
 		}
 	}
@@ -1824,7 +1834,7 @@ static int otp_prog_image(char *path, int nconfirm, bool ecc_force)
 		printf("programing strap region ...\n");
 		ret = otp_prog_strap_image(&image_layout, otpstrap);
 		if (ret != 0) {
-			printf("Error\n");
+			otp_err("OTP prog: strap region programming failed");
 			goto end;
 		}
 	}
@@ -1832,7 +1842,7 @@ static int otp_prog_image(char *path, int nconfirm, bool ecc_force)
 		printf("programing strap extension region ...\n");
 		ret = otp_prog_strap_ext_image(&image_layout, ecc_force);
 		if (ret != 0) {
-			printf("Error\n");
+			otp_err("OTP prog: strap_ext region programming failed");
 			goto end;
 		}
 	}
@@ -1840,7 +1850,7 @@ static int otp_prog_image(char *path, int nconfirm, bool ecc_force)
 		printf("programing caliptra region ...\n");
 		ret = otp_prog_image_region(&image_layout, OTP_REGION_CALIPTRA, ecc_force);
 		if (ret != 0) {
-			printf("Error\n");
+			otp_err("OTP prog: caliptra region programming failed");
 			goto end;
 		}
 	}
@@ -1848,10 +1858,12 @@ static int otp_prog_image(char *path, int nconfirm, bool ecc_force)
 		printf("programing user region ...\n");
 		ret = otp_prog_image_region(&image_layout, OTP_REGION_USER, ecc_force);
 		if (ret != 0) {
-			printf("Error\n");
+			otp_err("OTP prog: user region programming failed");
 			goto end;
 		}
 	}
+
+	printf(ANSI_COLOR_GREEN "OTP prog: program OK" ANSI_COLOR_RESET "\n");
 
 	return OTP_SUCCESS;
 end:
@@ -3026,14 +3038,19 @@ static int do_otpprog(int argc, char *const argv[])
 	 * incremental-program ECC warning
 	 */
 	bool ecc_force = false;
+	bool skip_wp = false;
 	char *path;
 	int next = 1;
 
-	while (argc > next && (!strcmp(argv[next], "o") || !strcmp(argv[next], "force"))) {
+	while (argc > next) {
 		if (!strcmp(argv[next], "o"))
 			nconfirm = 1;
-		else
+		else if (!strcmp(argv[next], "force"))
 			ecc_force = true;
+		else if (!strcmp(argv[next], "skip-wp"))
+			skip_wp = true;
+		else
+			break;
 		next++;
 	}
 
@@ -3044,7 +3061,7 @@ static int do_otpprog(int argc, char *const argv[])
 
 	path = argv[next];
 
-	ret = otp_prog_image(path, nconfirm, ecc_force);
+	ret = otp_prog_image(path, nconfirm, ecc_force, skip_wp);
 	if (ret == OTP_SUCCESS)
 		return CMD_RET_SUCCESS;
 	else if (ret == OTP_FAILURE)
@@ -3938,9 +3955,10 @@ static void usage(void)
 	       "\totp <dev> pb strap-ext|strap-ext-vld [o] [force] <word-aligned bit_offset> <full word value>\n"
 	       "\totp <dev> pb: \"o\" skips \"type YES\"; \"force\" overrides the refusal to rewrite an\n"
 	       "\t    ECC-active word that already has data (rewriting it would corrupt its parity)\n"
-	       "\totp <dev> prog [o] [force] <path>\n"
+	       "\totp <dev> prog [o] [force] [skip-wp] <path>\n"
 	       "\totp <dev> prog: \"o\" skips \"type YES\"; \"force\" overrides the refusal to rewrite an\n"
-	       "\t    ECC-active region whose existing data conflicts with the image\n"
+	       "\t    ECC-active region whose existing data conflicts with the image; \"skip-wp\" continues\n"
+	       "\t    past a region's static write-protect fuse instead of aborting (prints a warning)\n"
 	       "\totp <dev> info key|rbp|conf|strap|strap-ext|rompatch|mt-stage|hsm|prot\n"
 	       "\totp <dev> patch prog <dram_addr> <otp_w_offset> <w_count>\n"
 	       "\totp <dev> patch enable pre|post <otp_start_w_offset> <w_count>\n"

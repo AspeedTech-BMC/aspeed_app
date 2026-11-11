@@ -1053,11 +1053,9 @@ static int otp_print_mt_stage_info(void)
 /*
  * OTPCAL word 0x12: start of the 48-byte (24-word) vendor key hash. Its
  * first two words identify which HSM solution signed the provisioning
- * image; otp_cptra_has_ecc() (near do_otpreprog_ecc()) scans the full 24
- * words to find the first non-zero one.
+ * image.
  */
 #define CAL_VENDOR_KEY_HASH_OFFSET	0x12
-#define CAL_VENDOR_KEY_HASH_WORDS	24
 #define CAL_VENDOR_KEY_HASH_DUAL_HSM	0xddd4b37b
 #define CAL_VENDOR_KEY_HASH_SINGLE_HSM	0x428d18b0
 
@@ -1867,52 +1865,81 @@ struct reprog_ecc_entry {
 	uint32_t    word_offset; /* starting word offset within the region */
 	uint32_t    n_words;
 	int        (*read_fn)(uint32_t offset, uint16_t *data);
-	bool        skip_if_cptra_has_ecc; /* only the cptra entry sets this */
 };
 
-#define OTP_USR_SLOT_WORDS	320
+/* within USER: [0, ROMPATCH_WORD_OFFSET) is user data, the rest is rom patch */
+#define USER_REGION_ROMPATCH_WORD_OFFSET	0x280
 
 static int otp_ecc_policy_region_id(const char *name, uint32_t *id);
 
 static const struct reprog_ecc_entry reprog_ecc_tbl[] = {
-	{ "conf",         OTP_REGION_ID_CFG,     OTP_REGION_CONF,         0,                    OTP_CONF_REGION_SIZE,          otp_read_conf,          false },
-	{ "strap-ext",     OTP_REGION_ID_STRAPEXT, OTP_REGION_STRAP_EXT,     0,                   OTP_STRAP_EXT_REGION_SIZE / 2, otp_read_strap_ext,     false },
-	{ "strap-ext-vld", OTP_REGION_ID_STRAPEXT, OTP_REGION_STRAP_EXT_VLD, 0,                  OTP_STRAP_EXT_REGION_SIZE / 2, otp_read_strap_ext_vld, false },
-	{ "u-data0",      OTP_REGION_ID_USR,     OTP_REGION_USER,         0,                    OTP_USR_SLOT_WORDS,            otp_read_udata,         false },
-	{ "u-data1",      OTP_REGION_ID_USR,     OTP_REGION_USER,         OTP_USR_SLOT_WORDS,   OTP_USR_SLOT_WORDS,            otp_read_udata,         false },
-	{ "s-data",       OTP_REGION_ID_SEC,     OTP_REGION_SECURE,       0,                    OTP_SEC_REGION_SIZE,           otp_read_sdata,         false },
-	{ "cptra",        OTP_REGION_ID_CAL,     OTP_REGION_CALIPTRA,     0,                    OTP_CAL_REGION_SIZE,           otp_read_cptra,         true  },
+	{ "rom",           OTP_REGION_ID_ROM,      OTP_REGION_ROM,           0,
+	  OTP_ROM_REGION_SIZE, otp_read_rom },
+	{ "conf",          OTP_REGION_ID_CFG,      OTP_REGION_CONF,          0,
+	  OTP_CONF_REGION_SIZE, otp_read_conf },
+	{ "strap-ext",     OTP_REGION_ID_STRAPEXT, OTP_REGION_STRAP_EXT,     0,
+	  OTP_STRAP_EXT_REGION_SIZE / 2, otp_read_strap_ext },
+	{ "strap-ext-vld", OTP_REGION_ID_STRAPEXT, OTP_REGION_STRAP_EXT_VLD, 0,
+	  OTP_STRAP_EXT_REGION_SIZE / 2, otp_read_strap_ext_vld },
+	{ "u-data",        OTP_REGION_ID_USR,      OTP_REGION_USER,         0,
+	  USER_REGION_ROMPATCH_WORD_OFFSET, otp_read_udata },
+	{ "u-rompatch",    OTP_REGION_ID_USR,      OTP_REGION_USER,
+	  USER_REGION_ROMPATCH_WORD_OFFSET,
+	  OTP_USER_REGION_SIZE - USER_REGION_ROMPATCH_WORD_OFFSET, otp_read_udata },
+	{ "s-data",        OTP_REGION_ID_SEC,      OTP_REGION_SECURE,       0,
+	  OTP_SEC_REGION_SIZE, otp_read_sdata },
+	{ "cptra",         OTP_REGION_ID_CAL,      OTP_REGION_CALIPTRA,     0,
+	  OTP_CAL_REGION_SIZE, otp_read_cptra },
 };
 
 /*
- * Reads cptra keyhash words raw (non-ECC) via otp_read_ecc_code(). A
- * non-zero ECC code on the first non-zero word means cptra was originally
- * programmed with ECC parity and should be skipped during reprog. Defaults
- * to "has ECC" (skip) if the probe itself fails, since that's the safe
- * direction to be wrong in.
+ * Reads [start, end) raw (non-ECC) looking for a word with a non-zero
+ * hardware ECC code. That is unambiguous proof the region was burned
+ * with ECC parity - a cell's ECC bits can't end up non-zero unless ECC
+ * encoding actually wrote them. The converse does not hold: a word's
+ * ECC code can legitimately compute to zero even when ECC was used (it
+ * depends on the data pattern), so a zero code proves nothing and is
+ * not interesting here - only the first non-zero one, wherever it is,
+ * settles the question and ends the scan.
+ *
+ * A locked word (OTP_CMD_ERR_REGION_FAIL) proves nothing either way, so
+ * it's skipped and the scan continues - it would otherwise mask whatever
+ * the rest of the region's words have to say. Any other read error means
+ * the probe itself can't be trusted, so unlike a locked word it's
+ * reported back to the caller via *probe_failed rather than guessed at.
+ *
+ * Returns true if ECC was found, false otherwise; *probe_failed is set
+ * if a non-lock read error cut the scan short, in which case the false
+ * returned alongside it does NOT mean "confirmed no ECC".
  */
-static bool otp_cptra_has_ecc(void)
+static bool otp_region_has_ecc(uint32_t start, uint32_t end, const char *name,
+			       bool *probe_failed)
 {
 	uint16_t data;
 	uint32_t ecc_code;
 	uint32_t addr;
 
-	for (uint32_t i = 0; i < CAL_VENDOR_KEY_HASH_WORDS; i++) {
-		addr = CAL_REGION_START_ADDR + CAL_VENDOR_KEY_HASH_OFFSET + i;
+	*probe_failed = false;
 
+	for (addr = start; addr < end; addr++) {
+		data = 0;
+		ecc_code = 0;
 		if (otp_read_ecc_code(addr, &data, &ecc_code)) {
-			printf("OTP reprog_ecc: cptra ECC-code probe failed at 0x%x: %s\n",
-			       addr, otp_cmd_errno_str(errno));
-			return true;
+			if (errno == OTP_CMD_ERR_REGION_FAIL)
+				continue;
+			printf("OTP reprog_ecc: %s ECC-code probe failed at 0x%x: %s\n",
+			       name, addr, otp_cmd_errno_str(errno));
+			*probe_failed = true;
+			return false;
 		}
 
-		if (data) {
-			printf("OTP reprog_ecc: cptra[0x%x] data=0x%04x ecc_code=0x%02x\n",
-			       addr, data, ecc_code);
-			return ecc_code != 0;
+		if (data && ecc_code) {
+			printf("  %-14s 0x%04x   0x%04x   0x%02x\n", name, addr, data, ecc_code);
+			return true;
 		}
 	}
 
+	printf("  %-14s %-9s%-9sno ECC found\n", name, "-", "-");
 	return false;
 }
 
@@ -1930,12 +1957,21 @@ static bool otp_cptra_has_ecc(void)
 #define REPROG_REF_MAX_BYTES        0x10000
 #define REPROG_MISMATCH_PRINT_MAX   16
 
+/* A single OTP write pulse does not always fully latch a fuse bit on the
+ * first try, so each word is burned this many times, waiting between
+ * passes - matching u-boot's reprog_ecc.
+ */
+#define OTP_REPROG_ECC_PASSES       3
+#define OTP_REPROG_ECC_WAIT_SEC     3
+
 /* Absolute OTP word address (= word index in an otp dump) of word w of entry r */
 static uint32_t reprog_ecc_abs_addr(const struct reprog_ecc_entry *r, uint32_t w)
 {
 	uint32_t off = r->word_offset + w;
 
 	switch (r->mode) {
+	case OTP_REGION_ROM:
+		return ROM_REGION_START_ADDR + off;
 	case OTP_REGION_CONF:
 		return CONF_REGION_START_ADDR + off;
 	case OTP_REGION_STRAP_EXT:
@@ -2075,7 +2111,19 @@ static int do_otpreprog_ecc(int argc, char *const argv[])
 	const char *ref_path = NULL;
 	bool dry_run = false;
 	bool ref_mode;
-	bool cptra_has_ecc;
+	bool region_has_ecc[ARRAY_SIZE(reprog_ecc_tbl)] = {};
+	bool region_probe_failed[ARRAY_SIZE(reprog_ecc_tbl)] = {};
+	bool region_mismatch[ARRAY_SIZE(reprog_ecc_tbl)] = {};
+	bool region_read_failed[ARRAY_SIZE(reprog_ecc_tbl)] = {};
+	/*
+	 * Sticky across the whole command: ret itself gets reassigned by
+	 * every later step (even on success), so a probe failure recorded
+	 * here would otherwise be overwritten by a later step's success
+	 * before reaching the final "ret == CMD_RET_SUCCESS" check.
+	 */
+	bool any_probe_failed = false;
+	bool policy_saved[ARRAY_SIZE(reprog_ecc_tbl)] = {};
+	uint32_t saved_ecc_en[ARRAY_SIZE(reprog_ecc_tbl)] = {};
 	uint16_t *bufs[ARRAY_SIZE(reprog_ecc_tbl)] = {};
 	bool *locked[ARRAY_SIZE(reprog_ecc_tbl)] = {};
 	uint16_t *ref = NULL;
@@ -2142,16 +2190,40 @@ static int do_otpreprog_ecc(int argc, char *const argv[])
 
 	printf("Global ECC is disabled\n");
 
-	cptra_has_ecc = otp_cptra_has_ecc();
-	if (cptra_has_ecc)
-		printf("cptra region was already programmed with ECC, will be skipped\n");
-	else
-		printf("cptra region has no ECC, will be included in reprog\n");
+	/* Each region is probed over its own full address range from the table. */
+	printf("OTP reprog_ecc: ECC detection\n");
+	printf("  %-14s %-9s%-9s%s\n", "Region", "Addr", "Data", "ECC Code");
+	for (int i = 0; i < (int)ARRAY_SIZE(reprog_ecc_tbl); i++) {
+		const struct reprog_ecc_entry *r = &reprog_ecc_tbl[i];
+		bool probe_failed;
 
-	if (filter_ecc_id == (int)OTP_REGION_ID_CAL && cptra_has_ecc) {
-		printf("Region 'cptra' already has ECC, nothing to do\n");
-		ret = CMD_RET_SUCCESS;
-		goto free_bufs;
+		if (filter_ecc_id >= 0 && (int)r->ecc_id != filter_ecc_id)
+			continue;
+
+		region_has_ecc[i] = otp_region_has_ecc(reprog_ecc_abs_addr(r, 0),
+							reprog_ecc_abs_addr(r, r->n_words),
+							r->name, &probe_failed);
+		if (probe_failed) {
+			region_probe_failed[i] = true;
+			region_has_ecc[i] = true; /* fail-safe: still skip steps 2-4 */
+			any_probe_failed = true;
+		}
+	}
+
+	if (filter_ecc_id >= 0 && !any_probe_failed) {
+		bool all_has_ecc = true;
+
+		for (int i = 0; i < (int)ARRAY_SIZE(reprog_ecc_tbl); i++) {
+			if ((int)reprog_ecc_tbl[i].ecc_id != filter_ecc_id)
+				continue;
+			if (!region_has_ecc[i])
+				all_has_ecc = false;
+		}
+		if (all_has_ecc) {
+			printf("Region '%s' already has ECC, nothing to do\n", filter_name);
+			ret = CMD_RET_SUCCESS;
+			goto free_bufs;
+		}
 	}
 
 	if (!nconfirm && !dry_run) {
@@ -2168,9 +2240,58 @@ static int do_otpreprog_ecc(int argc, char *const argv[])
 	}
 
 	/*
-	 * Step 2: read all regions raw. Matches u-boot's reprog_ecc: ECC is
-	 * toggled via the temporary global switch (otp_ecc_ctrl()), not by
-	 * touching any region's persistent ECC policy.
+	 * A region's own ECC policy can force raw reads to come back
+	 * ECC-decoded even while the global switch below is off, so each
+	 * touched region's policy is saved and forced off for the duration
+	 * of this command, restored in free_bufs: regardless of outcome.
+	 *
+	 * Some entries share an ecc_id (e.g. strap-ext/strap-ext-vld are
+	 * both OTP_REGION_ID_STRAPEXT, u-data/u-rompatch are both
+	 * OTP_REGION_ID_USR), since one hardware policy register can cover
+	 * more than one table row. A duplicate must not be read again here
+	 * - the first pass already forced it to 0, so a second read would
+	 * save that 0 instead of the real original value and clobber the
+	 * correct restore done for the first occurrence. Copy the already
+	 * saved value instead and skip touching the hardware again.
+	 */
+	for (int i = 0; i < (int)ARRAY_SIZE(reprog_ecc_tbl); i++) {
+		const struct reprog_ecc_entry *r = &reprog_ecc_tbl[i];
+		uint32_t ecc_supported;
+		int dup;
+
+		if (filter_ecc_id >= 0 && (int)r->ecc_id != filter_ecc_id)
+			continue;
+
+		for (dup = 0; dup < i; dup++) {
+			if (policy_saved[dup] && reprog_ecc_tbl[dup].ecc_id == r->ecc_id)
+				break;
+		}
+		if (dup < i) {
+			saved_ecc_en[i] = saved_ecc_en[dup];
+			policy_saved[i] = true;
+			continue;
+		}
+
+		if (otp_get_ecc_policy(r->ecc_id, &saved_ecc_en[i], &ecc_supported)) {
+			printf("OTP reprog_ecc: failed to read %s's ECC policy\n", r->name);
+			ret = CMD_RET_FAILURE;
+			goto free_bufs;
+		}
+		if (otp_set_ecc_policy(r->ecc_id, 0)) {
+			printf("OTP reprog_ecc: failed to disable %s's ECC policy\n", r->name);
+			ret = CMD_RET_FAILURE;
+			goto free_bufs;
+		}
+		policy_saved[i] = true;
+	}
+
+	/*
+	 * Step 2: read all regions raw. Matches u-boot's reprog_ecc: ECC
+	 * encode/decode during the read/program sequence below is toggled
+	 * via the temporary global switch (otp_ecc_ctrl()), not by leaving
+	 * any region's persistent ECC policy changed - that policy was only
+	 * forced off above to stop it from interfering with this raw read,
+	 * and is restored in free_bufs: regardless of outcome.
 	 */
 	ret = otp_ecc_ctrl(false);
 	if (ret) {
@@ -2184,7 +2305,7 @@ static int do_otpreprog_ecc(int argc, char *const argv[])
 
 		if (filter_ecc_id >= 0 && (int)r->ecc_id != filter_ecc_id)
 			continue;
-		if (r->skip_if_cptra_has_ecc && cptra_has_ecc)
+		if (region_has_ecc[i])
 			continue;
 
 		bufs[i] = calloc(r->n_words, sizeof(uint16_t));
@@ -2230,7 +2351,7 @@ static int do_otpreprog_ecc(int argc, char *const argv[])
 		for (int i = 0; i < (int)ARRAY_SIZE(reprog_ecc_tbl); i++) {
 			if (filter_ecc_id >= 0 && (int)reprog_ecc_tbl[i].ecc_id != filter_ecc_id)
 				continue;
-			if (reprog_ecc_tbl[i].skip_if_cptra_has_ecc && cptra_has_ecc)
+			if (region_has_ecc[i])
 				continue;
 
 			if (reprog_ecc_check_ref(&reprog_ecc_tbl[i], bufs[i], locked[i],
@@ -2252,42 +2373,48 @@ static int do_otpreprog_ecc(int argc, char *const argv[])
 	}
 
 	/*
-	 * Step 3: re-program each region so HW computes and burns ECC bits.
-	 * ECC is turned on via the temporary global switch right before each
-	 * region's words are written (matching u-boot's reprog_ecc) rather
-	 * than via that region's persistent ECC policy.
+	 * Step 3: re-program each region so HW computes and burns ECC bits,
+	 * over multiple passes (matching u-boot's reprog_ecc). ECC is
+	 * turned on via the temporary global switch right before each
+	 * region's words are written, rather than via that region's
+	 * persistent ECC policy.
 	 */
-	for (int i = 0; i < (int)ARRAY_SIZE(reprog_ecc_tbl); i++) {
-		const struct reprog_ecc_entry *r = &reprog_ecc_tbl[i];
-
-		if (filter_ecc_id >= 0 && (int)r->ecc_id != filter_ecc_id)
-			continue;
-		if (r->skip_if_cptra_has_ecc && cptra_has_ecc)
-			continue;
-
-		ret = otp_ecc_ctrl(true);
-		if (ret) {
-			ret = CMD_RET_FAILURE;
-			goto free_bufs;
+	for (int pass = 0; pass < OTP_REPROG_ECC_PASSES; pass++) {
+		if (pass > 0) {
+			printf("Waiting %ds...\n", OTP_REPROG_ECC_WAIT_SEC);
+			sleep(OTP_REPROG_ECC_WAIT_SEC);
 		}
+		printf("Pass %d/%d\n", pass + 1, OTP_REPROG_ECC_PASSES);
 
-		printf("Re-programming '%s' (word_offset=0x%x, n_words=%u)...\n",
-		       r->name, r->word_offset, r->n_words);
-		for (uint32_t w = 0; w < r->n_words; w++) {
-			uint32_t addr = r->word_offset + w;
-			uint16_t val = bufs[i][w];
+		for (int i = 0; i < (int)ARRAY_SIZE(reprog_ecc_tbl); i++) {
+			const struct reprog_ecc_entry *r = &reprog_ecc_tbl[i];
 
-			if (!val)
+			if (filter_ecc_id >= 0 && (int)r->ecc_id != filter_ecc_id)
 				continue;
-			ret = otp_prog_data(r->mode, addr, 0, val, 1, false);
+			if (region_has_ecc[i])
+				continue;
+
+			ret = otp_ecc_ctrl(true);
 			if (ret) {
-				printf("  Prog failed at '%s' offset 0x%x: %s\n",
-				       r->name, addr, otp_cmd_errno_str(errno));
 				ret = CMD_RET_FAILURE;
 				goto free_bufs;
 			}
+
+			for (uint32_t w = 0; w < r->n_words; w++) {
+				uint32_t addr = r->word_offset + w;
+				uint16_t val = bufs[i][w];
+
+				if (!val)
+					continue;
+				ret = otp_prog_data(r->mode, addr, 0, val, 1, false);
+				if (ret) {
+					printf("  Prog failed at '%s' offset 0x%x: %s\n",
+					       r->name, addr, otp_cmd_errno_str(errno));
+					ret = CMD_RET_FAILURE;
+					goto free_bufs;
+				}
+			}
 		}
-		printf("  Done\n");
 	}
 
 	/*
@@ -2308,7 +2435,7 @@ static int do_otpreprog_ecc(int argc, char *const argv[])
 
 		if (filter_ecc_id >= 0 && (int)r->ecc_id != filter_ecc_id)
 			continue;
-		if (r->skip_if_cptra_has_ecc && cptra_has_ecc)
+		if (region_has_ecc[i])
 			continue;
 
 		ret = otp_ecc_ctrl(true);
@@ -2333,6 +2460,7 @@ static int do_otpreprog_ecc(int argc, char *const argv[])
 
 		if (!read_ok) {
 			printf("  '%s': skipping hash verification (read failed)\n", r->name);
+			region_read_failed[i] = true;
 			ret = CMD_RET_FAILURE;
 			continue;
 		}
@@ -2344,19 +2472,63 @@ static int do_otpreprog_ecc(int argc, char *const argv[])
 			otp_print_hash_line(post_hash, 48);
 			printf("  '%-13s' hash mismatch after programming - data may be corrupted\n",
 			       r->name);
+			region_mismatch[i] = true;
 			ret = CMD_RET_FAILURE;
-		} else {
-			printf("  '%-13s' verified OK (hash unchanged)\n", r->name);
 		}
 	}
 
+	printf("\nOTP reprog_ecc: summary\n");
+	printf("  %-14s %-13s%-10s%s\n", "Region", "Policy(orig)", "Pre-ECC", "Result");
+	for (int i = 0; i < (int)ARRAY_SIZE(reprog_ecc_tbl); i++) {
+		const struct reprog_ecc_entry *r = &reprog_ecc_tbl[i];
+		const char *policy, *pre_ecc, *result, *color;
+
+		if (filter_ecc_id >= 0 && (int)r->ecc_id != filter_ecc_id)
+			continue;
+
+		policy = policy_saved[i] ? (saved_ecc_en[i] ? "enabled" : "disabled") : "n/a";
+		pre_ecc = region_probe_failed[i] ? "unknown" : (region_has_ecc[i] ? "yes" : "no");
+
+		if (region_probe_failed[i]) {
+			result = "PROBE FAILED";
+			color = ANSI_COLOR_RED;
+		} else if (region_has_ecc[i]) {
+			result = "skipped";
+			color = ANSI_COLOR_CYAN;
+		} else if (region_read_failed[i]) {
+			result = "READ FAILED";
+			color = ANSI_COLOR_RED;
+		} else if (region_mismatch[i]) {
+			result = "MISMATCH";
+			color = ANSI_COLOR_RED;
+		} else {
+			result = "verified OK";
+			color = ANSI_COLOR_GREEN;
+		}
+
+		printf("  %-14s %-13s%-10s%s%s" ANSI_COLOR_RESET "\n",
+		       r->name, policy, pre_ecc, color, result);
+	}
+
+	if (any_probe_failed)
+		ret = CMD_RET_FAILURE;
+
 	if (ret == CMD_RET_SUCCESS)
-		printf("Done. Run 'otp <dev> ecc enable' to permanently enable global ECC.\n");
+		printf(ANSI_COLOR_GREEN
+		       "Done. Run 'otp <dev> ecc enable' to permanently enable global ECC."
+		       ANSI_COLOR_RESET "\n");
 
 free_bufs:
 	/* Don't bother if ECC was never (or can't be) toggled off, e.g. it's hardware-latched on */
 	if (global_status != OTP_ECC_GLOBAL_HW_ENABLED)
 		otp_ecc_ctrl(false);
+	for (int i = 0; i < (int)ARRAY_SIZE(reprog_ecc_tbl); i++) {
+		if (!policy_saved[i])
+			continue;
+		if (otp_set_ecc_policy(reprog_ecc_tbl[i].ecc_id, saved_ecc_en[i]))
+			printf("OTP reprog_ecc: failed to restore %s's ECC policy\n",
+			       reprog_ecc_tbl[i].name);
+	}
 	for (int i = 0; i < (int)ARRAY_SIZE(reprog_ecc_tbl); i++) {
 		free(bufs[i]);
 		free(locked[i]);
@@ -3771,10 +3943,10 @@ static void usage(void)
 	       "\totp <dev> dump <file> [--skip_locked_regions]\n"
 	       "\totp <dev> screen\n"
 	       "\totp <dev> screen <golden.bin>\n"
-	       "\totp <dev> reprog_ecc [conf|strap-ext|u-data|s-data|cptra] [--ref <verified_dump>] [--dry_run] [o]\n"
+	       "\totp <dev> reprog_ecc [rom|conf|strap-ext|u-data|s-data|cptra] [--ref <verified_dump>] [--dry_run] [o]\n"
 	       "\totp <dev> reprog_ecc: re-programs ECC-capable regions' data with parity and\n"
-	       "\t    verifies each one's hash is unchanged; auto-skips cptra if it already has ECC;\n"
-	       "\t    does not touch the global-ECC fuse - follow with 'otp <dev> ecc enable'\n");
+	       "\t    verifies each one's hash is unchanged; auto-skips any region that already\n"
+	       "\t    has ECC; does not touch the global-ECC fuse - follow with 'otp <dev> ecc enable'\n");
 }
 
 struct cmd_tbl *find_cmd_tbl(const char *cmd, struct cmd_tbl *table,

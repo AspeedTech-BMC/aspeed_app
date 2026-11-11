@@ -1638,6 +1638,9 @@ static int cptra_test_certify_key_extended(void)
 
 	dbg_printf("output: chksum=0x%x, fips_status=0x%x\n", output.chksum,
 		   output.fips_status);
+	info_printf("certify_key_extended resp size: %u bytes\n", output.size);
+	if (output.size && output.size <= sizeof(output.certify_key_resp))
+		hexdump(output.certify_key_resp, output.size, "certify_key_resp:");
 
 end:
 	if (ret)

@@ -2344,7 +2344,13 @@ static int do_otpreprog_ecc(int argc, char *const argv[])
 		otp_print_hash_line(pre_hash[i], 48);
 	}
 
-	/* Compare the raw read with the reference; nothing is programmed on a mismatch */
+	/*
+	 * Compare the raw read with the reference; nothing is programmed on
+	 * a mismatch. cptra holds per-chip-unique key material, so there is
+	 * no such thing as a reference dump valid across chips for it - skip
+	 * it here and reprogram it from its own raw read instead, same as
+	 * when no reference is given at all.
+	 */
 	if (ref_mode) {
 		printf("Comparing %s with reference '%s'...\n",
 		       filter_name ? filter_name : "all regions", ref_path);
@@ -2352,6 +2358,8 @@ static int do_otpreprog_ecc(int argc, char *const argv[])
 			if (filter_ecc_id >= 0 && (int)reprog_ecc_tbl[i].ecc_id != filter_ecc_id)
 				continue;
 			if (region_has_ecc[i])
+				continue;
+			if (reprog_ecc_tbl[i].ecc_id == OTP_REGION_ID_CAL)
 				continue;
 
 			if (reprog_ecc_check_ref(&reprog_ecc_tbl[i], bufs[i], locked[i],

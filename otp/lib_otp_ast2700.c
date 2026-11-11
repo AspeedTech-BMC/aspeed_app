@@ -437,6 +437,98 @@ int otp_read_ecc_code(uint32_t offset, uint16_t *data, uint32_t *ecc_code)
 	return 0;
 }
 
+/*
+ * Native ioctl fetches the whole struct in one call. Over IPC, struct
+ * otp_region_protect's 33 fields don't fit in one 8-word mailbox message,
+ * so it's fetched as 9 smaller group calls instead (see enum
+ * otp_region_protect_group) and reassembled here, field order matching
+ * each group's declaration comment.
+ */
+int otp_get_region_protect(struct otp_region_protect *prot)
+{
+	uint32_t v[4];
+	int status;
+
+	if (otp_use_ipc()) {
+		status = otp_ipc_get_region_protect(OTP_PROT_GROUP_FIXED, v, 4);
+		if (status)
+			goto ipc_fail;
+		prot->rom_patch = v[0];
+		prot->otpcfg = v[1];
+		prot->otpstrap = v[2];
+		prot->strap_ext = v[3];
+
+		status = otp_ipc_get_region_protect(OTP_PROT_GROUP_RBP, v, 4);
+		if (status)
+			goto ipc_fail;
+		prot->rbp_soc_svn = v[0];
+		prot->rbp_soc_keyretire = v[1];
+		prot->rbp_calip_svn = v[2];
+		prot->rbp_calip_keyretire = v[3];
+
+		status = otp_ipc_get_region_protect(OTP_PROT_GROUP_SECURE_VAL, v, 4);
+		if (status)
+			goto ipc_fail;
+		prot->secure0 = v[0];
+		prot->secure1 = v[1];
+		prot->secure2 = v[2];
+		prot->secure3 = v[3];
+
+		status = otp_ipc_get_region_protect(OTP_PROT_GROUP_SECURE_RANGE, v, 4);
+		if (status)
+			goto ipc_fail;
+		prot->secure0_range = v[0];
+		prot->secure1_range = v[1];
+		prot->secure2_range = v[2];
+		prot->secure3_range = v[3];
+
+		status = otp_ipc_get_region_protect(OTP_PROT_GROUP_USR_VAL, v, 4);
+		if (status)
+			goto ipc_fail;
+		prot->usr0 = v[0];
+		prot->usr1 = v[1];
+		prot->usr2 = v[2];
+		prot->usr3 = v[3];
+
+		status = otp_ipc_get_region_protect(OTP_PROT_GROUP_USR_RANGE, v, 4);
+		if (status)
+			goto ipc_fail;
+		prot->usr0_range = v[0];
+		prot->usr1_range = v[1];
+		prot->usr2_range = v[2];
+		prot->usr3_range = v[3];
+
+		status = otp_ipc_get_region_protect(OTP_PROT_GROUP_CALIPTRA_VAL, v, 4);
+		if (status)
+			goto ipc_fail;
+		prot->caliptra0 = v[0];
+		prot->caliptra1 = v[1];
+		prot->caliptra2 = v[2];
+		prot->caliptra3 = v[3];
+
+		status = otp_ipc_get_region_protect(OTP_PROT_GROUP_CALIPTRA_RANGE, v, 4);
+		if (status)
+			goto ipc_fail;
+		prot->caliptra0_range = v[0];
+		prot->caliptra1_range = v[1];
+		prot->caliptra2_range = v[2];
+		prot->caliptra3_range = v[3];
+
+		status = otp_ipc_get_region_protect(OTP_PROT_GROUP_PUF, v, 1);
+		if (status)
+			goto ipc_fail;
+		prot->puf = v[0];
+
+		return 0;
+
+ipc_fail:
+		errno = otp_ipc_status_to_errno(status);
+		return -1;
+	}
+
+	return ioctl(info_cb.otp_fd, ASPEED_OTP_GET_REGION_PROTECT, prot);
+}
+
 int otp_prog(uint32_t offset, uint16_t data)
 {
 	struct otp_prog pdata;

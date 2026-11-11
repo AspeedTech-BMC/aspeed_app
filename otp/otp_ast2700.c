@@ -1090,6 +1090,221 @@ static int otp_print_hsm_info(void)
 	return OTP_SUCCESS;
 }
 
+/*
+ * Dynamic region-protect registers (see otp_get_region_protect()): each
+ * field of struct otp_region_protect is LOCK(bit31)/WEN(bits 15:8, one per
+ * master)/REN(bits 7:0), except .puf which has its own 4-bit lock-only
+ * layout.
+ */
+#define OTP_PROT_LOCK_BIT		BIT(31)
+#define OTP_PROT_WEN_MASK		0xff00
+#define OTP_PROT_REN_MASK		0xff
+
+/* secure/usr/caliptra *_range fields: bits31:16=size, bits15:0=start offset (OTP words) */
+#define OTP_PROT_RANGE_SIZE(range)	(((range) >> 16) & 0xffff)
+#define OTP_PROT_RANGE_START(range)	((range) & 0xffff)
+
+/*
+ * rom_patch/otpcfg/otpstrap/strap_ext have no *_RANGE register - unlike
+ * secure/usr/caliptra, their address window is fixed in hardware, not
+ * runtime-configurable. Synthesize a range value in the same encoding from
+ * this file's own region constants so otp_print_protect_row() can print
+ * them the same way.
+ */
+static inline uint32_t otp_prot_fixed_range(uint32_t start, uint32_t end)
+{
+	return ((uint32_t)(end - start) << 16) | start;
+}
+
+#define OTP_PROT_SW_PUF_RLOCK_BIT	BIT(8)
+#define OTP_PROT_HW_PUF_RLOCK_BIT	BIT(4)
+#define OTP_PROT_HW_PUF_WLOCK_BIT	BIT(1)
+#define OTP_PROT_SW_PUF_WLOCK_BIT	BIT(0)
+
+/* Underline separating a table's header row from its data rows. */
+static void otp_print_protect_sep(int len)
+{
+	printf("  ");
+	while (len-- > 0)
+		printf("_");
+	printf("\n");
+}
+
+/*
+ * Region column widened to 20 and a blank filler after Write, matching the
+ * Lock/WEN/REN and RLock/WLock tables' layout, so all three tables' Start/
+ * End columns land in the same place.
+ */
+static void otp_print_static_row(const char *name, int has_read, int read_prot, int write_prot,
+				 uint32_t start, uint32_t end)
+{
+	if (has_read)
+		printf("  %-20s %-8d%-8d%-6s0x%04x    0x%04x\n", name, read_prot, write_prot,
+		       "", start, end);
+	else
+		printf("  %-20s %-8s%-8d%-6s0x%04x    0x%04x\n", name, "-", write_prot,
+		       "", start, end);
+}
+
+/*
+ * has_range is false for ROM_PATCH, OTPCFG, OTPSTRAP, STRAP_EXT, and the
+ * RBP_* registers - only secure/usr/caliptra have a configurable address
+ * window, and its START_OFFSET field is relative to that group's own fixed
+ * base (e.g. USER_REGION_START_ADDR for usr0-3) rather than OTP address 0,
+ * so base is added in to show the same global OTP word offset "otp
+ * read"/"otp pb" use. end is exclusive (start + size), matching this
+ * file's existing START_ADDR/END_ADDR region-boundary convention.
+ */
+static void otp_print_protect_row(const char *name, uint32_t value, int has_range,
+				  uint32_t range, uint32_t base)
+{
+	uint32_t start;
+
+	if (has_range) {
+		start = base + OTP_PROT_RANGE_START(range);
+		printf("  %-20s 0x%02x    0x%02x    %-6d0x%04x    0x%04x\n", name,
+		       value & OTP_PROT_REN_MASK,
+		       (value & OTP_PROT_WEN_MASK) >> 8,
+		       !!(value & OTP_PROT_LOCK_BIT),
+		       start, start + OTP_PROT_RANGE_SIZE(range));
+	} else {
+		printf("  %-20s 0x%02x    0x%02x    %-6d%-10s%s\n", name,
+		       value & OTP_PROT_REN_MASK,
+		       (value & OTP_PROT_WEN_MASK) >> 8,
+		       !!(value & OTP_PROT_LOCK_BIT),
+		       "-", "-");
+	}
+}
+
+/*
+ * PUF has no combined region-wide LOCK bit and no per-master WEN/REN mask -
+ * sw_puf/hw_puf each just get their own single read-lock and write-lock
+ * bit, so this gets its own header (RLock/WLock) rather than reusing the
+ * Lock/WEN/REN table's columns, which mean "enabled" rather than "locked".
+ * The trailing "" is an unlabeled filler, just wide enough to make up for
+ * having one fewer value column than the Lock/WEN/REN table, so Start/End
+ * land in the same place in both.
+ */
+static void otp_print_puf_row(const char *name, int rlock, int wlock, uint32_t start, uint32_t end)
+{
+	printf("  %-20s %-8d%-8d%-6s0x%04x    0x%04x\n", name, rlock, wlock, "", start, end);
+}
+
+/*
+ * "otp info prot": static protect is OTPCFG word 0 (fuse, permanent) - read
+ * fresh here rather than reusing info_cb.pro_sts, so this command is
+ * self-contained and doesn't depend on do_ast_otp()'s dispatch-time
+ * refresh of that global. Dynamic protect is the OTPMISCREG lock/wen/ren
+ * registers (SoC-side, settable at runtime until their own LOCK bit is
+ * set) - native ioctl or IPC/BootMCU, whichever otp_get_region_protect()
+ * picks.
+ */
+static int otp_print_protect_info(void)
+{
+	union otp_pro_sts s;
+	struct otp_region_protect prot;
+	uint16_t otp_conf0 = 0;
+	int ret;
+
+	ret = otp_read_conf(0, &otp_conf0);
+	if (ret) {
+		otp_err("Failed to read OTPCFG word 0 for static protect status");
+		return OTP_FAILURE;
+	}
+	s.value = otp_conf0;
+
+	printf("Static protect (OTPCFG word 0, fuse - permanent):\n");
+	printf("  %-20s %-8s%-8s%-6s%-10s%s\n", "Region", "RLock", "WLock", "", "Start", "End");
+	otp_print_protect_sep(59);
+	/* Rows below are in offset order; mem_lock covers the whole OTP (ties
+	 * rom's start at 0x0) so it's listed first as the broadest of the two.
+	 */
+	otp_print_static_row("mem_lock", 0, 0, s.fields.mem_lock,
+			      ROM_REGION_START_ADDR, HW_PUF_REGION_END_ADDR);
+	otp_print_static_row("rom", 1, s.fields.r_prot_rom, s.fields.w_prot_rom,
+			      ROM_REGION_START_ADDR, ROM_REGION_END_ADDR);
+	otp_print_static_row("rbp", 0, 0, s.fields.w_prot_rbp,
+			      RBP_REGION_START_ADDR, RBP_REGION_END_ADDR);
+	otp_print_static_row("conf", 1, s.fields.r_prot_conf, s.fields.w_prot_conf,
+			      CONF_REGION_START_ADDR, CONF_REGION_END_ADDR);
+	otp_print_static_row("strap", 1, s.fields.r_prot_strap, s.fields.w_prot_strap,
+			      STRAP_REGION_START_ADDR, STRAP_REGION_END_ADDR);
+	otp_print_static_row("strap_ext", 1, s.fields.r_prot_strap_ext, s.fields.w_prot_strap_ext,
+			      STRAPEXT_REGION_START_ADDR, STRAPEXT_REGION_END_ADDR);
+	otp_print_static_row("cptra", 1, s.fields.r_prot_cal, s.fields.w_prot_cal,
+			      CAL_REGION_START_ADDR, CAL_REGION_END_ADDR);
+	otp_print_static_row("puf", 0, 0, s.fields.w_prot_puf,
+			      SW_PUF_REGION_START_ADDR, HW_PUF_REGION_END_ADDR);
+
+	printf("\nDynamic protect (OTP control registers, per-boot - settable until locked):\n");
+	if (otp_get_region_protect(&prot)) {
+		otp_err("Failed to read OTP region-protect registers");
+		return OTP_FAILURE;
+	}
+
+	printf("  %-20s %-8s%-8s%-6s%-10s%s\n", "Region", "REN", "WEN", "Lock", "Start", "End");
+	otp_print_protect_sep(59);
+	/*
+	 * Offset order. RBP_* have no *_RANGE register (unlike secure/usr/
+	 * caliptra - see struct otp_region_protect's comment); their fixed
+	 * word sub-ranges within the RBP region are hardcoded here instead.
+	 */
+	otp_print_protect_row("ROM_PATCH", prot.rom_patch, 1,
+			       otp_prot_fixed_range(ROM_REGION_START_ADDR, ROM_REGION_END_ADDR), 0);
+	otp_print_protect_row("RBP_SOC_KEYRETIRE", prot.rbp_soc_keyretire, 1,
+			       otp_prot_fixed_range(RBP_REGION_START_ADDR,
+						     RBP_REGION_START_ADDR + 2), 0);
+	otp_print_protect_row("RBP_CALIP_KEYRETIRE", prot.rbp_calip_keyretire, 1,
+			       otp_prot_fixed_range(RBP_REGION_START_ADDR + 3,
+						     RBP_REGION_START_ADDR + 4), 0);
+	otp_print_protect_row("RBP_SOC_SVN", prot.rbp_soc_svn, 1,
+			       otp_prot_fixed_range(RBP_REGION_START_ADDR + 4,
+						     RBP_REGION_START_ADDR + 8), 0);
+	otp_print_protect_row("RBP_CALIP_SVN", prot.rbp_calip_svn, 1,
+			       otp_prot_fixed_range(RBP_REGION_START_ADDR + 8,
+						     RBP_REGION_START_ADDR + 0x12), 0);
+	otp_print_protect_row("OTPCFG", prot.otpcfg, 1,
+			       otp_prot_fixed_range(CONF_REGION_START_ADDR,
+						     CONF_REGION_END_ADDR), 0);
+	otp_print_protect_row("OTPSTRAP", prot.otpstrap, 1,
+			       otp_prot_fixed_range(STRAP_REGION_START_ADDR,
+						     STRAP_REGION_END_ADDR), 0);
+	otp_print_protect_row("STRAP_EXT", prot.strap_ext, 1,
+			       otp_prot_fixed_range(STRAPEXT_REGION_START_ADDR,
+						     STRAPEXT_REGION_END_ADDR), 0);
+	otp_print_protect_row("USR0", prot.usr0, 1, prot.usr0_range, USER_REGION_START_ADDR);
+	otp_print_protect_row("USR1", prot.usr1, 1, prot.usr1_range, USER_REGION_START_ADDR);
+	otp_print_protect_row("USR2", prot.usr2, 1, prot.usr2_range, USER_REGION_START_ADDR);
+	otp_print_protect_row("USR3", prot.usr3, 1, prot.usr3_range, USER_REGION_START_ADDR);
+	otp_print_protect_row("SECURE0", prot.secure0, 1,
+			       prot.secure0_range, SEC_REGION_START_ADDR);
+	otp_print_protect_row("SECURE1", prot.secure1, 1,
+			       prot.secure1_range, SEC_REGION_START_ADDR);
+	otp_print_protect_row("SECURE2", prot.secure2, 1,
+			       prot.secure2_range, SEC_REGION_START_ADDR);
+	otp_print_protect_row("SECURE3", prot.secure3, 1,
+			       prot.secure3_range, SEC_REGION_START_ADDR);
+	otp_print_protect_row("CALIPTRA0", prot.caliptra0, 1,
+			       prot.caliptra0_range, CAL_REGION_START_ADDR);
+	otp_print_protect_row("CALIPTRA1", prot.caliptra1, 1,
+			       prot.caliptra1_range, CAL_REGION_START_ADDR);
+	otp_print_protect_row("CALIPTRA2", prot.caliptra2, 1,
+			       prot.caliptra2_range, CAL_REGION_START_ADDR);
+	otp_print_protect_row("CALIPTRA3", prot.caliptra3, 1,
+			       prot.caliptra3_range, CAL_REGION_START_ADDR);
+
+	printf("\n  %-20s %-8s%-8s%-6s%-10s%s\n", "Region", "RLock", "WLock", "", "Start", "End");
+	otp_print_protect_sep(59);
+	otp_print_puf_row("SW_PUF", !!(prot.puf & OTP_PROT_SW_PUF_RLOCK_BIT),
+			   !!(prot.puf & OTP_PROT_SW_PUF_WLOCK_BIT),
+			   SW_PUF_REGION_START_ADDR, SW_PUF_REGION_END_ADDR);
+	otp_print_puf_row("HW_PUF", !!(prot.puf & OTP_PROT_HW_PUF_RLOCK_BIT),
+			   !!(prot.puf & OTP_PROT_HW_PUF_WLOCK_BIT),
+			   HW_PUF_REGION_START_ADDR, HW_PUF_REGION_END_ADDR);
+
+	return OTP_SUCCESS;
+}
+
 static int otp_print_secure_image(struct otp_image_layout *image_layout)
 {
 	uint32_t *buf;
@@ -2353,6 +2568,8 @@ static int do_otpinfo(int argc, char *const argv[])
 		otp_print_mt_stage_info();
 	} else if (!strcmp(argv[1], "hsm")) {
 		otp_print_hsm_info();
+	} else if (!strcmp(argv[1], "prot")) {
+		return otp_print_protect_info() == OTP_SUCCESS ? CMD_RET_SUCCESS : CMD_RET_FAILURE;
 	} else {
 		otp_err("otp info: unknown region '%s'", argv[1]);
 		return CMD_RET_USAGE;
@@ -3544,7 +3761,7 @@ static void usage(void)
 	       "\totp <dev> prog [o] [force] <path>\n"
 	       "\totp <dev> prog: \"o\" skips \"type YES\"; \"force\" overrides the refusal to rewrite an\n"
 	       "\t    ECC-active region whose existing data conflicts with the image\n"
-	       "\totp <dev> info key|rbp|conf|strap|strap-ext|rompatch|mt-stage|hsm\n"
+	       "\totp <dev> info key|rbp|conf|strap|strap-ext|rompatch|mt-stage|hsm|prot\n"
 	       "\totp <dev> patch prog <dram_addr> <otp_w_offset> <w_count>\n"
 	       "\totp <dev> patch enable pre|post <otp_start_w_offset> <w_count>\n"
 	       "\totp <dev> ecc status|tmp-enable|tmp-disable\n"

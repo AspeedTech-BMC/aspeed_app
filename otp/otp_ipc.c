@@ -309,3 +309,21 @@ int otp_ipc_read_ecc_code(uint32_t addr, uint32_t *data, uint32_t *ecc_code)
 
 	return status;
 }
+
+/* count is the caller's own otp_region_protect_group field count (1 or 4), not wire-enforced. */
+int otp_ipc_get_region_protect(uint32_t group, uint32_t *out, uint32_t count)
+{
+	uint32_t req[8] = {0, OTP_IPC_PACK_OP_COUNT(OTP_IPC_OP_GET_REGION_PROTECT, group),
+			   0, 0, 0, 0, 0, 0};
+	uint32_t resp[8] = {0};
+	int status;
+
+	if (otp_ipc_fd < 0)
+		return -ENODEV;
+
+	status = otp_ipc_call(req, resp);
+	if (status == 0)
+		memcpy(out, &resp[1], count * sizeof(uint32_t));
+
+	return status;
+}
